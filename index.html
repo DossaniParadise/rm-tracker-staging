@@ -6757,8 +6757,8 @@ function getTicketByKey(key) {
 function renderTechDetailPane(key) {
     const pane = document.getElementById('techDetailPane');
     if (!pane) return;
-    const t = getTicketByKey(key || (activeClockIn && activeClockIn.ticketKey));
-    if (!t) {
+    const ticket = getTicketByKey(key || (activeClockIn && activeClockIn.ticketKey));
+    if (!ticket) {
         pane.innerHTML = `<div class="tech-detail-empty">${t('Select a job to view full details.')}</div>`;
         return;
     }
@@ -6772,20 +6772,20 @@ function renderTechDetailPane(key) {
     pane.innerHTML = `
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;flex-wrap:wrap;margin-bottom:10px">
             <div>
-                <div style="font-weight:700">${escHtml(t.id || t._key)}</div>
-                <div style="font-size:12px;color:var(--text-muted)">${escHtml((stores.find(s => s.code === t.storeCode) || {}).name || t.storeCode || '')}</div>
+                <div style="font-weight:700">${escHtml(ticket.id || ticket._key)}</div>
+                <div style="font-size:12px;color:var(--text-muted)">${escHtml((stores.find(s => s.code === ticket.storeCode) || {}).name || ticket.storeCode || '')}</div>
             </div>
-            <span class="ticket-status-badge status-${getStatusColorClass(t.status)}" style="font-size:11px">${getStatusLabel(t.status)}</span>
+            <span class="ticket-status-badge status-${getStatusColorClass(ticket.status)}" style="font-size:11px">${getStatusLabel(ticket.status)}</span>
         </div>
-        <div style="font-size:13px;line-height:1.4;margin-bottom:8px">${catIcons[t.category] || '📎'} ${escHtml(t.description || '')}</div>
-        ${(Array.isArray(t.photos) && t.photos.length) ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">' + t.photos.map(function(url) { return '<img src="' + url + '" style="height:68px;width:68px;object-fit:cover;border-radius:8px;border:2px solid var(--border);cursor:pointer" onclick="openLightbox(\'' + url + '\')">'; }).join('') + '</div>' : ''}
+        <div style="font-size:13px;line-height:1.4;margin-bottom:8px">${catIcons[ticket.category] || '📎'} ${escHtml(ticket.description || '')}</div>
+        ${(Array.isArray(ticket.photos) && ticket.photos.length) ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">' + ticket.photos.map(function(url) { return '<img src="' + url + '" style="height:68px;width:68px;object-fit:cover;border-radius:8px;border:2px solid var(--border);cursor:pointer" onclick="openLightbox(\'' + url + '\')">'; }).join('') + '</div>' : ''}
         <div class="tjc-fast-actions" style="margin-bottom:10px">
             ${notes.map(n => `<button class="quick-chip" onclick="prefillTechNote('${escHtml(n)}')">${escHtml(n)}</button>`).join('')}
         </div>
         <textarea class="form-textarea" id="techQuickNote" placeholder="${t('Quick update note')}" style="min-height:78px;font-size:13px"></textarea>
         <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-            <button class="btn btn-sm" style="background:var(--primary);color:#fff;border:none" onclick="saveTechQuickUpdate('${t._key}', 'inprogress')">${t('Save Update')}</button>
-            <button class="btn-view-ticket" onclick="openTicketDetail('${t._key}', true)">${t('Open Full Details')}</button>
+            <button class="btn btn-sm" style="background:var(--primary);color:#fff;border:none" onclick="saveTechQuickUpdate('${ticket._key}', 'inprogress')">${t('Save Update')}</button>
+            <button class="btn-view-ticket" onclick="openTicketDetail('${ticket._key}', true)">${t('Open Full Details')}</button>
         </div>`;
 }
 
@@ -6856,13 +6856,13 @@ function renderTechDashboard() {
         const catIcons = { plumbing:'🚿', equipment:'⚙️', it:'💻', structural:'🧱', safety:'🛡️', other:'📎' };
     const isClocked = activeClockIn !== null;
 
-    listEl.innerHTML = displayJobs.map(t => {
-        const storeName = (stores.find(s => s.code === t.storeCode) || {}).name || t.storeCode;
+    listEl.innerHTML = displayJobs.map(ticket => {
+        const storeName = (stores.find(s => s.code === ticket.storeCode) || {}).name || ticket.storeCode;
         const shortStore = storeName.replace(/^Burger King /, 'BK ').replace(/^Paradise QS /, 'PQS ');
-        const isActiveJob = activeClockIn && activeClockIn.ticketKey === t._key;
-        const prBadge = {routine:'<span class="priority-word p-routine">Routine</span>',urgent:'<span class="priority-word p-urgent">Urgent</span>',emergency:'<span class="priority-word p-emergency">Emergency</span>'}[t.priority] || '';
-        const desc = (t.description || '').substring(0, 100) + ((t.description || '').length > 100 ? '...' : '');
-        const time = getTimeAgo(t.createdAt);
+        const isActiveJob = activeClockIn && activeClockIn.ticketKey === ticket._key;
+        const prBadge = {routine:'<span class="priority-word p-routine">Routine</span>',urgent:'<span class="priority-word p-urgent">Urgent</span>',emergency:'<span class="priority-word p-emergency">Emergency</span>'}[ticket.priority] || '';
+        const desc = (ticket.description || '').substring(0, 100) + ((ticket.description || '').length > 100 ? '...' : '');
+        const time = getTimeAgo(ticket.createdAt);
         const zoneBadge = ''; // zone system removed
 
         let actionBtn = '';
@@ -6870,34 +6870,34 @@ function renderTechDashboard() {
             const modeStatus = activeClockIn.modeStatus || 'inprogress';
             const btnLabel = modeStatus === 'inprogress' ? t('📦 Mark Waiting') : t('▶ Resume Work');
             actionBtn = `<button class="btn-tech-primary" onclick="event.stopPropagation();techAdvanceExecutionMode()">${btnLabel}</button>`;
-        } else if (!isClocked && isActiveStatus(t.status)) {
-            actionBtn = `<button class="btn-clock-in" onclick="event.stopPropagation();clockIn('${t._key}','${escHtml(t.id)}','${escHtml(shortStore)}', '${t.priority || ''}')">${t('▶ Clock In')}</button>`;
+        } else if (!isClocked && isActiveStatus(ticket.status)) {
+            actionBtn = `<button class="btn-clock-in" onclick="event.stopPropagation();clockIn('${ticket._key}','${escHtml(ticket.id)}','${escHtml(shortStore)}', '${ticket.priority || ''}')">${t('▶ Clock In')}</button>`;
         } else if (isClocked && !isActiveJob) {
             actionBtn = `<button class="btn-clock-in" disabled title="${t('Finish current job first')}">${t('▶ Clock In')}</button>`;
         }
 
-        return `<div class="tech-job-card ${isActiveJob ? 'active-job' : ''}" onclick="if(!this.classList.contains('active-job'))techOpenTicket('${t._key}')">
+        return `<div class="tech-job-card ${isActiveJob ? 'active-job' : ''}" onclick="if(!this.classList.contains('active-job'))techOpenTicket('${ticket._key}')">
             <div class="tjc-main">
                 <div class="tjc-top">
                     <span class="tjc-store">${escHtml(shortStore)}</span>
-                    <span class="tjc-id">${escHtml(t.id || t._key)}</span>
+                    <span class="tjc-id">${escHtml(ticket.id || ticket._key)}</span>
                     ${prBadge}
                 </div>
-                <div class="tjc-desc">${catIcons[t.category] || ''} ${escHtml(desc)}</div>
+                <div class="tjc-desc">${catIcons[ticket.category] || ''} ${escHtml(desc)}</div>
                 <div class="tjc-meta">
-                    <span class="ticket-status-badge status-${getStatusColorClass(t.status)}" style="font-size:11px;padding:2px 8px">${getStatusLabel(t.status)}</span>
+                    <span class="ticket-status-badge status-${getStatusColorClass(ticket.status)}" style="font-size:11px;padding:2px 8px">${getStatusLabel(ticket.status)}</span>
                     <span style="color:var(--text-muted)">${time}</span>
                     <span style="color:#059669;font-weight:600">${t('Assigned to you')}</span>
                     ${zoneBadge}
                 </div>
                 <div class="tjc-fast-actions">
-                    <button class="quick-chip" onclick="event.stopPropagation();saveTechQuickChip('${t._key}','On site — troubleshooting now')">${t('On site')}</button>
-                    <button class="quick-chip" onclick="event.stopPropagation();saveTechQuickChip('${t._key}','Waiting on parts')">${t('Waiting parts')}</button>
-                    <button class="quick-chip" onclick="event.stopPropagation();saveTechQuickChip('${t._key}','Need callback from store')">${t('Need callback')}</button>
+                    <button class="quick-chip" onclick="event.stopPropagation();saveTechQuickChip('${ticket._key}','On site — troubleshooting now')">${t('On site')}</button>
+                    <button class="quick-chip" onclick="event.stopPropagation();saveTechQuickChip('${ticket._key}','Waiting on parts')">${t('Waiting parts')}</button>
+                    <button class="quick-chip" onclick="event.stopPropagation();saveTechQuickChip('${ticket._key}','Need callback from store')">${t('Need callback')}</button>
                 </div>
                 ${isActiveJob ? `<div class="tjc-note-row" onclick="event.stopPropagation()">
-                    <textarea class="tjc-note-input" id="mobileQuickNote_${t._key}" placeholder="${t('Add a note…')}" rows="2"></textarea>
-                    <button class="tjc-note-save" onclick="event.stopPropagation();saveMobileQuickNote('${t._key}')">${t('Save Note')}</button>
+                    <textarea class="tjc-note-input" id="mobileQuickNote_${ticket._key}" placeholder="${t('Add a note…')}" rows="2"></textarea>
+                    <button class="tjc-note-save" onclick="event.stopPropagation();saveMobileQuickNote('${ticket._key}')">${t('Save Note')}</button>
                 </div>` : ''}
             </div>
             <div class="tjc-actions">
