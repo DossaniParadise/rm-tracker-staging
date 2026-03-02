@@ -9383,7 +9383,14 @@ function toggleTheme() {
     if (saved === 'dark') {
         document.documentElement.setAttribute('data-theme', 'dark');
         setTimeout(() => {
-    ctural:'🧱',safety:'🛡️',other:'📎'};
+            const btn = document.getElementById('themeToggle');
+            if (btn) btn.textContent = '☀️';
+        }, 0);
+    }
+})();
+
+function getCategoryEmoji(cat) {
+    const map = {plumbing:'🚿',equipment:'⚙️',it:'💻',structural:'🧱',safety:'🛡️',other:'📎'};
     return map[cat] || '📎';
 }
 
