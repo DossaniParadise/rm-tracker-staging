@@ -3983,7 +3983,7 @@ body.kiosk .action-card[onclick*="showNewIssueScreen"] { display:none !important
 <div class="toast" id="toast"></div>
 
 <!-- Firebase SDK -->
-<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
@@ -7868,34 +7868,6 @@ function filterAllTickets() {
     }
     
     listEl.innerHTML = filtered.map(t => renderAllTicketCard(t)).join('');
-        const brandIcon = BRAND_LOGOS[t.brand] ? `<img src="${BRAND_LOGOS[t.brand]}" style="height:14px;width:14px;object-fit:contain;border-radius:2px">` : '';
-        const timeAgo = getTimeAgo(t.createdAt);
-        const photoCount = t.photos ? t.photos.length : 0;
-        const shortDesc = (t.description || '').substring(0, 80) + ((t.description || '').length > 80 ? '...' : '');
-        const statusClass = getStatusColorClass(t.status);
-        const prColor = t.priority === 'emergency' ? '#dc2626' : t.priority === 'urgent' ? '#d97706' : '#059669';
-        const staleInProgress = normalizeTicketStatus(t.status) === 'inprogress' && ((Date.now() - (t.updatedAt || t.createdAt || 0)) >= 24 * 60 * 60 * 1000);
-        
-        return `<div class="ticket-card" onclick="openTicketFromAllByKey('${esc(t._key || t.id)}')">
-            <div class="ticket-card-top">
-                <span class="ticket-store-name">${esc(t.storeName || t.storeCode)}</span>
-                ${getAssigneeBadgeHtml(t)}
-            </div>
-            <div class="ticket-card-desc">
-                <span class="cat-emoji">${getCategoryEmoji(t.category)}</span> ${esc(shortDesc)}
-            </div>
-            <div class="ticket-card-meta">
-                <span class="ticket-id">${esc(t.id)}</span>
-                <span style="color:${prColor}">● ${capitalize(t.priority || 'routine')}</span>
-                <span>${catLabel(t.category)}${t.location ? ' · ' + capitalize(t.location) : ''}</span>
-                ${brandIcon}
-                <span>${timeAgo}</span>
-                ${photoCount ? '<span>📷 ' + photoCount + '</span>' : ''}
-                ${staleInProgress ? '<span class="priority-badge p-urgent">⏱️ In Progress 24h+</span>' : ''}
-            </div>
-            ${renderInlineAssignControls(t, 'all')}
-        </div>`;
-    }.join('');
 }
 
 function renderAllTicketCard(t) {
