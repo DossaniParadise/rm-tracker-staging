@@ -7777,7 +7777,7 @@ let allTicketsDrilldown = null;
 // in-place by syncAfterTicketMutation so local edits are always reflected.
 var _tCache = null;
 var _tCacheTs = 0;
-var _T_TTL = 5 * 60 * 1000; // 5 minutes (was 90s)
+var _T_TTL = 90000;
 
 function getTicketsCached(cb) {
     if (_tCache && (Date.now() - _tCacheTs < _T_TTL)) {
