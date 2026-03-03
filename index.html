@@ -4,7 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Dossani Paradise Repair and Maintenance Tracker</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://firebaseio.com" crossorigin>
+    <link rel="dns-prefetch" href="https://www.gstatic.com">
+    <link rel="dns-prefetch" href="https://firebaseio.com">
+    <link rel="dns-prefetch" href="https://unpkg.com">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" media="print" onload="this.media='all'" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
     <style>
 /* ============================================================
@@ -1906,6 +1911,22 @@ body {
     80% { transform: translateX(calc(-50% + 4px)) translateY(0); }
 }
 
+/* ---- Global loading overlay ---- */
+.loading-overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(255,255,255,0.7); display: flex; align-items: center;
+    justify-content: center; z-index: 99999; transition: opacity 0.2s;
+}
+[data-theme="dark"] .loading-overlay { background: rgba(15,20,25,0.7); }
+.loading-overlay .spinner-lg {
+    width: 40px; height: 40px; border: 4px solid var(--border);
+    border-top-color: var(--primary); border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+}
+.loading-inline {
+    display: flex; align-items: center; justify-content: center;
+    padding: 30px; color: var(--text-muted); gap: 10px;
+}
 /* ---- Loading spinner ---- */
 .spinner {
     display: inline-block;
@@ -3879,7 +3900,7 @@ body.kiosk .action-card[onclick*="showNewIssueScreen"] { display:none !important
                 <textarea class="form-textarea" id="clockOutNotes" placeholder="What did you do? What's the current state?" style="min-height:80px"></textarea>
             </div>
             <div class="form-group" style="margin-bottom:12px">
-                <label class="form-label" style="font-size:12px;text-transform:none;letter-spacing:0">📷 Attach Photos <span style="color:var(--danger);font-weight:700">*required</span></label>
+                <label class="form-label" style="font-size:12px;text-transform:none;letter-spacing:0">📷 Attach Photos <span style="color:var(--warning);font-weight:600">(strongly recommended)</span></label>
                 <div class="photo-btn-row" style="gap:8px">
                     <button type="button" class="photo-btn" style="font-size:13px;padding:9px 8px" onclick="document.getElementById('clockOutPhotoGallery').click()">
                         <span class="photo-btn-icon" style="font-size:16px">🖼️</span> Upload Photo
@@ -3987,7 +4008,7 @@ body.kiosk .action-card[onclick*="showNewIssueScreen"] { display:none !important
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- Leaflet JS loaded on demand by loadLeaflet() -->
 
 <!-- Data files + Application logic (single-file build v5.9.0) -->
 <script>
@@ -4146,67 +4167,49 @@ const BRAND_LOGOS = {
 // ============================================================
 let currentUser = null;
 
-// ── i18n ─────────────────────────────────────────────────────────────────────
-window._appLang = 'en';
-const _TRANSLATIONS = {
-    // Tech dashboard
-    'Active Jobs':        'Trabajos Activos',
-    'Urgent':             'Urgente',
-    'Waiting':            'En Espera',
-    'Completed':          'Completados',
-    'Assigned to you':    'Asignado a ti',
-    'No jobs assigned to you': 'No tienes trabajos asignados',
-    'No completed jobs yet':   'Aún no hay trabajos completados',
-    'Clock In':           'Registrar Entrada',
-    'Clock Out':          'Registrar Salida',
-    '▶ Clock In':         '▶ Registrar Entrada',
-    'Finish current job first': 'Termina el trabajo actual primero',
-    '📦 Mark Waiting':    '📦 Marcar En Espera',
-    '▶ Resume Work':      '▶ Reanudar Trabajo',
-    'On site — troubleshooting now': 'En sitio — diagnosticando',
-    'Waiting on parts':   'Esperando piezas',
-    'Need callback from store': 'Necesito llamada de la tienda',
-    'On site':            'En sitio',
-    'Waiting parts':      'Esperando piezas',
-    'Need callback':      'Necesito llamada',
-    'Add a note…':        'Agregar una nota…',
-    'Save Note':          'Guardar Nota',
-    'Open Full Details':  'Ver Detalles Completos',
-    'Select a job to view full details.': 'Selecciona un trabajo para ver los detalles.',
-    'Quick update note':  'Nota de actualización rápida',
-    'Save Update':        'Guardar Actualización',
-    'On site — troubleshooting now': 'En sitio — diagnosticando ahora',
-    'Part ordered — ETA pending': 'Pieza ordenada — ETA pendiente',
-    'Temporary fix in place': 'Solución temporal aplicada',
-    'Need manager follow-up': 'Se necesita seguimiento del gerente',
-    // Status labels
-    'Unassigned':         'Sin Asignar',
-    'Assigned':           'Asignado',
-    'Dispatched':         'Despachado',
-    'In Progress':        'En Progreso',
-    'Waiting':            'En Espera',
-    'Resolved':           'Resuelto',
-    'Closed':             'Cerrado',
-    // Priorities
-    'Routine':            'Rutina',
-    'Urgent':             'Urgente',
-    'Emergency':          'Emergencia',
-    // Clock out screen
-    'Complete Clock Out': 'Completar Salida',
-    'Clock out notes (optional)': 'Notas de salida (opcional)',
-    'A photo is required to clock out': 'Se requiere una foto para registrar la salida',
-    // General
-    'Loading...':         'Cargando...',
-    'Sign Out':           'Cerrar Sesión',
-    'Add a quick note first.': 'Agrega una nota primero.',
-    'Note added':         'Nota agregada',
-    'Update saved':       'Actualización guardada',
-    'Already clocked into a job. Clock out first.': 'Ya registraste entrada en un trabajo. Registra la salida primero.',
-    'Repair & Maintenance': 'Reparación y Mantenimiento',
-};
-function t(str) {
-    if (window._appLang !== 'es') return str;
-    return _TRANSLATIONS[str] || str;
+// i18n passthrough (user phone handles translation automatically)
+function t(str) { return str; }
+
+// Global loading helpers
+function showLoading(msg) {
+    let overlay = document.getElementById('globalLoadingOverlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'globalLoadingOverlay';
+        overlay.className = 'loading-overlay';
+        overlay.innerHTML = '<div style="text-align:center"><div class="spinner-lg"></div>' +
+            '<div style="margin-top:12px;font-size:13px;color:var(--text-mid)" id="loadingMsg">' + (msg || 'Loading...') + '</div></div>';
+        document.body.appendChild(overlay);
+    } else {
+        const msgEl = overlay.querySelector('#loadingMsg');
+        if (msgEl) msgEl.textContent = msg || 'Loading...';
+        overlay.style.display = 'flex';
+    }
+}
+function hideLoading() {
+    const overlay = document.getElementById('globalLoadingOverlay');
+    if (overlay) overlay.style.display = 'none';
+}
+
+
+// Leaflet lazy loader — only fetches Leaflet JS when the map is actually needed
+let _leafletLoaded = false;
+let _leafletLoadPromise = null;
+function loadLeaflet() {
+    if (_leafletLoaded && window.L) return Promise.resolve();
+    if (_leafletLoadPromise) return _leafletLoadPromise;
+    _leafletLoadPromise = new Promise((resolve, reject) => {
+        if (window.L) { _leafletLoaded = true; resolve(); return; }
+        const s = document.createElement('script');
+        s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+        s.onload = () => { _leafletLoaded = true; resolve(); };
+        s.onerror = () => reject(new Error('Failed to load Leaflet'));
+        document.head.appendChild(s);
+        // Also ensure CSS is loaded
+        const existingLink = document.querySelector('link[href*="leaflet"]');
+        if (existingLink) existingLink.media = 'all';
+    });
+    return _leafletLoadPromise;
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -4295,6 +4298,14 @@ syncStatusFilterUIFromConfig();
 auth.onAuthStateChanged(async (user) => {
     if (user) {
         console.log('Signed in:', user.email);
+        showLoading('Loading your account...');
+        // Preload tickets in background while user profile loads (warm the cache)
+        db.ref('tickets').once('value', function(snap) {
+            var arr = [];
+            snap.forEach(function(child) { arr.push(Object.assign({ _key: child.key }, child.val())); });
+            _tCache = arr;
+            _tCacheTs = Date.now();
+        });
         await loadUserData(user);
     } else if (auth.isSignInWithEmailLink(window.location.href)) {
         handleEmailLinkSignIn();
@@ -4426,6 +4437,7 @@ async function loadUserData(user) {
                         email: user.email,
                         requestedAt: firebase.database.ServerValue.TIMESTAMP
                     });
+                    hideLoading();
                     showError('Your account is pending approval. An admin will set you up shortly.');
                 } catch (e) {
                     console.warn('Could not write pending entry:', e);
@@ -4438,11 +4450,10 @@ async function loadUserData(user) {
 
         currentUser = resolveRuntimeProfile(user, data);
 
-        // Language detection — rmtech3 gets Spanish UI
-        window._appLang = (currentUser.email || '').toLowerCase().includes('rmtech3') ? 'es' : 'en';
 
         showAppScreen();
     } catch (err) {
+        hideLoading();
         console.error('Load user error:', err);
         showError('Failed to load account. Try again.');
     }
@@ -4845,6 +4856,7 @@ function updateAllLocationsVisibility(user) {
 }
 
 function showAppScreen() {
+    hideLoading();
     document.getElementById('loginScreen').style.display = 'none';
     document.getElementById('appContainer').style.display = 'flex';
     const experienceProfile = getExperienceProfile(currentUser.role);
@@ -4892,9 +4904,8 @@ function showAppScreen() {
         }
     }
 
-    // Load vendor list
-    loadVendors();
-    loadTechUsers(); // Load technicians from Firebase — no hardcoded names
+    // Fire non-blocking data loads in parallel (don't await, they resolve independently)
+    Promise.all([loadVendors(), loadTechUsers()]).catch(e => console.warn('Parallel load warn:', e));
 
     subscribeAdminSummary();
     startGlobalPolling();
@@ -5154,6 +5165,7 @@ function loadMapOverview(type) {
     
     // Init or clear map
     if (!overviewMap) {
+        if (typeof L === 'undefined') { loadLeaflet().then(() => loadMapOverview()); return; }
         overviewMap = L.map('overviewMap', { zoomControl: true, attributionControl: false }).setView([33.0, -96.5], 7);
         const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
         currentTileLayer = L.tileLayer(isDark ? DARK_TILES : LIGHT_TILES, {
@@ -6735,8 +6747,22 @@ function initTechDashboard() {
 }
 
 function loadTechJobs() {
+    const listEl = document.getElementById('techJobList');
+    if (listEl && (!listEl.innerHTML || listEl.innerHTML.includes('empty-state') || listEl.innerHTML.includes('Loading'))) {
+        listEl.innerHTML = '<div class="loading-inline"><span class="spinner spinner-dark"></span> Loading your jobs...</div>';
+    }
+    const myEmail = String(currentUser.email || '').trim().toLowerCase();
+    // Fast path: query only this tech's assigned tickets instead of ALL tickets
+    if (!_tCache) {
+        db.ref('tickets').orderByChild('assignedTo').equalTo(myEmail).once('value', function(snap) {
+            const assignedJobs = [];
+            snap.forEach(function(child) { assignedJobs.push(Object.assign({ _key: child.key }, child.val())); });
+            _renderTechJobsFromAssigned(assignedJobs, myEmail);
+        });
+        return;
+    }
+    // If cache is warm, use it (includes unassigned browse jobs)
     getTicketsCached(function(allTickets) {
-        const myEmail = String(currentUser.email || '').trim().toLowerCase();
         const assignedJobs = allTickets.filter(function(t) {
             return String(t.assignedTo || '').trim().toLowerCase() === myEmail;
         });
@@ -6758,6 +6784,29 @@ function loadTechJobs() {
 
         renderTechDashboard();
     });
+}
+
+function _renderTechJobsFromAssigned(assignedJobs, myEmail) {
+    // Optional browse context for unassigned work only
+    var browseJobs = [];
+    if (window.techBrowseUnassigned === true) {
+        // For browse, we need full cache - trigger a background load
+        getTicketsCached(function(allTickets) {
+            var techStores = currentUser.stores === 'all' ? stores.map(function(s) { return s.code; }) :
+                (Array.isArray(currentUser.stores) ? currentUser.stores : [currentUser.stores]);
+            browseJobs = allTickets.filter(function(t) {
+                if (String(t.assignedTo || '').trim()) return false;
+                return techStores.includes(t.storeCode);
+            });
+            var byKey = new Map();
+            assignedJobs.concat(browseJobs).forEach(function(t) { byKey.set(t._key, t); });
+            techJobs = Array.from(byKey.values());
+            renderTechDashboard();
+        });
+        return;
+    }
+    techJobs = assignedJobs;
+    renderTechDashboard();
 }
 
 function getExecutionModeState(status = 'inprogress') {
@@ -6804,6 +6853,7 @@ function renderTechDetailPane(key) {
         <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
             <button class="btn btn-sm" style="background:var(--primary);color:#fff;border:none" onclick="saveTechQuickUpdate('${ticket._key}', 'inprogress')">${t('Save Update')}</button>
             <button class="btn-view-ticket" onclick="openTicketDetail('${ticket._key}', true)">${t('Open Full Details')}</button>
+            ${(!activeClockIn || activeClockIn.ticketKey !== ticket._key) && isActiveStatus(ticket.status) ? '<button class="btn btn-sm" style="background:#059669;color:#fff;border:none" onclick="techQuickResolve(\'' + ticket._key + '\')">' + t('✅ Mark Resolved') + '</button>' : ''}
         </div>`;
 }
 
@@ -6822,6 +6872,33 @@ async function saveTechQuickUpdate(key, fallbackStatus) {
     await db.ref('tickets/' + key + '/activity').push(activity);
     toast('Update saved', 'success');
     renderTechDetailPane(key);
+}
+
+async function techQuickResolve(key) {
+    const ticket = getTicketByKey(key);
+    if (!ticket) return;
+    if (!confirm(t('Mark this job as resolved? You can add notes and photos from the full detail view.'))) return;
+    try {
+        const now = Date.now();
+        const note = document.getElementById('techQuickNote')?.value?.trim() || '';
+        await db.ref('tickets/' + key + '/status').set('resolved');
+        await db.ref('tickets/' + key + '/updatedAt').set(firebase.database.ServerValue.TIMESTAMP);
+        const activity = {
+            action: 'status_change',
+            by: currentUser.name,
+            byEmail: currentUser.email,
+            timestamp: now,
+            oldStatus: ticket.status,
+            newStatus: 'resolved',
+            note: note ? 'Marked resolved — "' + note + '"' : 'Marked resolved by technician'
+        };
+        await db.ref('tickets/' + key + '/activity').push(activity);
+        invalidateTCache();
+        toast(t('Job marked as resolved!'), 'success');
+        loadTechJobs();
+    } catch(err) {
+        toast('Error: ' + err.message, 'error');
+    }
 }
 
 function renderTechDashboard() {
@@ -7045,13 +7122,7 @@ async function submitNewJob() {
         var catPrefix = catMap[_anjCategory] || 'GEN';
         var cSnap = await db.ref('counters/' + storeCode + '/' + catPrefix).transaction(function(v) { return (v||0)+1; });
         var ticketId = storeCode + '-' + catPrefix + '-' + String(cSnap.snapshot.val()).padStart(4,'0');
-        for (var i = 0; i < _anjPhotos.length; i++) {
-            var anjFile = _anjPhotos[i].file;
-            var anjExt = anjFile.name.split('.').pop() || 'jpg';
-            var anjRef = storage.ref('tickets/' + ticketId + '/anj_' + i + '.' + anjExt);
-            await anjRef.put(anjFile);
-            photoUrls.push(await anjRef.getDownloadURL());
-        }
+        for (var i = 0; i < _anjPhotos.length; i++) photoUrls.push(await fileToBase64(_anjPhotos[i].file));
         var now = Date.now();
         var ticket = {
             id: ticketId, storeCode: storeCode,
@@ -7320,7 +7391,7 @@ function showClockOutPrompt() {
     document.getElementById('clockOutInfo').innerHTML = `
         <div style="font-size:14px;margin-bottom:4px"><strong>${escHtml(activeClockIn.ticketId)}</strong> at ${escHtml(activeClockIn.storeName)}</div>
         <div style="font-size:13px;color:var(--text-muted)">Time on job: ${mins} minute${mins !== 1 ? 's' : ''}</div>
-        <div style="font-size:12px;color:#ef4444;font-weight:600;margin-top:6px">📷 Photo required to clock out</div>`;
+        <div style="font-size:12px;color:#d97706;font-weight:600;margin-top:6px">📷 Photos strongly recommended</div>`;
 
     const statusOptions = ['inprogress', 'waiting', 'resolved'];
     const statusLabels = { inprogress: 'Continue Working', waiting: 'Waiting on Parts/Info', resolved: 'Resolved / Completed' };
@@ -7336,10 +7407,9 @@ function showClockOutPrompt() {
 async function confirmClockOut() {
     if (!activeClockIn) return;
 
-    // MANDATORY PHOTO CHECK
+    // Photos strongly recommended but not mandatory
     if (clockOutPhotos.length === 0) {
-        toast('A photo is required to clock out', 'error');
-        return;
+        if (!confirm('No photos attached. Photos help document completed work. Continue without photos?')) return;
     }
 
     const btn = document.getElementById('clockOutBtn');
@@ -7351,12 +7421,9 @@ async function confirmClockOut() {
         const notes = document.getElementById('clockOutNotes').value.trim();
 
         const photoUrls = [];
-        for (let i = 0; i < clockOutPhotos.length; i++) {
-            const f = clockOutPhotos[i];
-            const ext = f.name.split('.').pop() || 'jpg';
-            const coRef = storage.ref(`timeEntries/${activeClockIn.entryKey}/photo_${i}.${ext}`);
-            await coRef.put(f);
-            photoUrls.push(await coRef.getDownloadURL());
+        for (const f of clockOutPhotos) {
+            const dataUrl = await fileToBase64(f);
+            photoUrls.push(dataUrl);
         }
 
         await db.ref('timeEntries/' + activeClockIn.entryKey).update({ endTime: now });
@@ -7395,6 +7462,8 @@ async function confirmClockOut() {
 // ADMIN SUMMARY DASHBOARD
 // ============================================================
 function renderAdminSummaryFromTickets(tickets) {
+    const grid = document.getElementById('adminSummaryGrid');
+    if (grid && !grid.innerHTML.trim()) grid.innerHTML = '<div class="loading-inline"><span class="spinner spinner-dark"></span> Loading dashboard...</div>';
     const statusCounts = Object.fromEntries(STATUS_ORDER.map(status => [status, 0]));
     // Scope counts to this user's stores — Directors/Coaches see only their stores
     const scopedTickets = scopeTicketsToUser(tickets);
@@ -7491,13 +7560,21 @@ function subscribeAdminSummary() {
         return;
     }
 
+    // Use cached tickets first for instant render, then subscribe for live updates
+    if (_tCache) {
+        renderAdminSummaryFromTickets(_tCache);
+    }
+
     adminSummaryListenerRef = db.ref('tickets');
     let _summaryDebounce = null;
     adminSummaryListenerCallback = snap => {
         const tickets = [];
         snap.forEach(child => { tickets.push({ _key: child.key, ...child.val() }); });
+        // Also update the ticket cache since we already have the data
+        _tCache = tickets;
+        _tCacheTs = Date.now();
         clearTimeout(_summaryDebounce);
-        _summaryDebounce = setTimeout(() => renderAdminSummaryFromTickets(tickets), 1500);
+        _summaryDebounce = setTimeout(() => renderAdminSummaryFromTickets(tickets), 800);
     };
 
     adminSummaryListenerRef.on('value', adminSummaryListenerCallback);
@@ -8360,14 +8437,11 @@ async function submitTicket() {
     btn.disabled = true;
 
     try {
-        // Upload photos to Firebase Storage (store URLs, not base64)
+        // Convert photos to base64 data URLs (stored directly in ticket)
         const photoUrls = [];
-        for (let i = 0; i < uploadedPhotos.length; i++) {
-            const p = uploadedPhotos[i];
-            const ext = p.file.name.split('.').pop() || 'jpg';
-            const photoRef = storage.ref(`tickets/${ticketId}/photo_${i}.${ext}`);
-            await photoRef.put(p.file);
-            photoUrls.push(await photoRef.getDownloadURL());
+        for (const p of uploadedPhotos) {
+            const dataUrl = await fileToBase64(p.file);
+            photoUrls.push(dataUrl);
         }
 
         // Generate sequential ticket ID: STORE-CAT-0001
@@ -8897,14 +8971,10 @@ async function saveTicketEdits(key) {
 
     try {
         const updates = { description: newDesc, updatedAt: firebase.database.ServerValue.TIMESTAMP };
-        // Upload new photos to Firebase Storage and append URLs
+        // Convert new photos to base64 and append
         const photoUrls = [];
-        for (let i = 0; i < editPhotos.length; i++) {
-            const f = editPhotos[i];
-            const ext = f.name.split('.').pop() || 'jpg';
-            const eRef = storage.ref(`tickets/${key}/edit_${Date.now()}_${i}.${ext}`);
-            await eRef.put(f);
-            photoUrls.push(await eRef.getDownloadURL());
+        for (const f of editPhotos) {
+            photoUrls.push(await fileToBase64(f));
         }
         const t = currentTickets.find(x => x._key === key);
         if (photoUrls.length && t) {
@@ -9217,12 +9287,9 @@ async function saveStatusUpdate(key) {
 
 
         const statusPhotoUrls = [];
-        for (let i = 0; i < statusPhotos.length; i++) {
-            const f = statusPhotos[i];
-            const ext = f.name.split('.').pop() || 'jpg';
-            const sRef = storage.ref(`tickets/${key}/status_${Date.now()}_${i}.${ext}`);
-            await sRef.put(f);
-            statusPhotoUrls.push(await sRef.getDownloadURL());
+        for (const f of statusPhotos) {
+            const dataUrl = await fileToBase64(f);
+            statusPhotoUrls.push(dataUrl);
         }
 
         const actSnap = await db.ref(`tickets/${key}/activity`).once('value');
@@ -9525,6 +9592,15 @@ function getCategoryEmoji(cat) {
     return map[cat] || '📎';
 }
 
+function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
 function showToast(msg, type = 'success') {
     const t = document.getElementById('toast');
     t.textContent = msg;
@@ -9651,7 +9727,7 @@ document.addEventListener('keydown', (e) => {
 
 <!-- Version Footer -->
 <div id="versionFooter" style="position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.03);border-top:1px solid rgba(0,0,0,0.06);padding:2px 8px;font-size:10px;color:#94a3b8;display:flex;justify-content:center;gap:16px;z-index:1;font-family:'JetBrains Mono',monospace;letter-spacing:0.3px">
-    <span>R&M Tracker v3.13</span>
+    <span>R&M Tracker v3.15</span>
 </div>
 
 </body>
