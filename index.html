@@ -4299,13 +4299,6 @@ auth.onAuthStateChanged(async (user) => {
     if (user) {
         console.log('Signed in:', user.email);
         showLoading('Loading your account...');
-        // Preload tickets in background while user profile loads (warm the cache)
-        db.ref('tickets').once('value', function(snap) {
-            var arr = [];
-            snap.forEach(function(child) { arr.push(Object.assign({ _key: child.key }, child.val())); });
-            _tCache = arr;
-            _tCacheTs = Date.now();
-        });
         await loadUserData(user);
     } else if (auth.isSignInWithEmailLink(window.location.href)) {
         handleEmailLinkSignIn();
@@ -7567,14 +7560,22 @@ function subscribeAdminSummary() {
 
     adminSummaryListenerRef = db.ref('tickets');
     let _summaryDebounce = null;
+    let hasRenderedInitialSummary = false;
     adminSummaryListenerCallback = snap => {
         const tickets = [];
         snap.forEach(child => { tickets.push({ _key: child.key, ...child.val() }); });
         // Also update the ticket cache since we already have the data
         _tCache = tickets;
         _tCacheTs = Date.now();
+
+        if (!hasRenderedInitialSummary) {
+            hasRenderedInitialSummary = true;
+            renderAdminSummaryFromTickets(tickets);
+            return;
+        }
+
         clearTimeout(_summaryDebounce);
-        _summaryDebounce = setTimeout(() => renderAdminSummaryFromTickets(tickets), 800);
+        _summaryDebounce = setTimeout(() => renderAdminSummaryFromTickets(tickets), 150);
     };
 
     adminSummaryListenerRef.on('value', adminSummaryListenerCallback);
@@ -7947,13 +7948,20 @@ function filterAllTickets() {
             if (!groups[key]) groups[key] = [];
             groups[key].push(t);
         });
+        const prOrder = { emergency: 0, urgent: 1, routine: 2 };
         const sortedGroupKeys = Object.keys(groups).sort((a, b) => {
             if (a === '__unassigned__') return 1;
             if (b === '__unassigned__') return -1;
+            const countDiff = groups[b].length - groups[a].length;
+            if (countDiff !== 0) return countDiff;
             return a.localeCompare(b);
         });
         listEl.innerHTML = sortedGroupKeys.map(groupKey => {
-            const groupTickets = groups[groupKey];
+            const groupTickets = groups[groupKey].slice().sort((a, b) => {
+                const prDiff = (prOrder[a.priority] ?? 3) - (prOrder[b.priority] ?? 3);
+                if (prDiff !== 0) return prDiff;
+                return (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0);
+            });
             const displayName = groupKey === '__unassigned__' ? 'Unassigned' : groupKey.split('@')[0];
             const header = `<div style="padding:8px 12px 4px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);background:var(--bg);border-bottom:1px solid var(--border);margin-bottom:4px">👤 ${escHtml(displayName)} — ${groupTickets.length} ticket${groupTickets.length !== 1 ? 's' : ''}</div>`;
             const cards = groupTickets.map(t => renderAllTicketCard(t)).join('');
