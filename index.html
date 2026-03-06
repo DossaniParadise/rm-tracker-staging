@@ -4167,9 +4167,6 @@ const BRAND_LOGOS = {
 // ============================================================
 let currentUser = null;
 
-// i18n passthrough (user phone handles translation automatically)
-function t(str) { return str; }
-
 // Global loading helpers
 function showLoading(msg) {
     let overlay = document.getElementById('globalLoadingOverlay');
@@ -4299,13 +4296,6 @@ auth.onAuthStateChanged(async (user) => {
     if (user) {
         console.log('Signed in:', user.email);
         showLoading('Loading your account...');
-        // Preload tickets in background while user profile loads (warm the cache)
-        db.ref('tickets').once('value', function(snap) {
-            var arr = [];
-            snap.forEach(function(child) { arr.push(Object.assign({ _key: child.key }, child.val())); });
-            _tCache = arr;
-            _tCacheTs = Date.now();
-        });
         await loadUserData(user);
     } else if (auth.isSignInWithEmailLink(window.location.href)) {
         handleEmailLinkSignIn();
@@ -4472,6 +4462,7 @@ function logout() {
     }
     notifyTickets = [];
     detachSelectedStoreSummaryListener();
+    detachTechJobsListener();
     if (adminSummaryListenerRef && adminSummaryListenerCallback) {
         adminSummaryListenerRef.off('value', adminSummaryListenerCallback);
         adminSummaryListenerRef = null;
@@ -6327,15 +6318,15 @@ function renderInlineAssignControls(ticket, contextPrefix = 'inline') {
         return `
             <div class="inline-assign-row" onclick="event.stopPropagation()">
                 <div class="inline-assign-left">
-                    <div class="inline-assign-label">${'Assign to'}</div>
+                    <div class="inline-assign-label">Assign to</div>
                     <select id="${selectId}" class="form-select form-select-sm inline-assign-select" onchange="event.stopPropagation();handleVendorManagerSelection(this)">
-                        <option value="">${'Select…'}</option>
+                        <option value="">Select…</option>
                         ${getAssignmentOptionsHtml()}
                     </select>
                 </div>
                 <div class="inline-assign-right">
                     <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();assignTicketFromSelect('${escAttr(ticketKey)}','${selectId}')">
-                        ${'Assign'}
+                        Assign
                     </button>
                 </div>
             </div>
@@ -6388,12 +6379,12 @@ function renderModalAssignmentBlock(ticket, key) {
     // Assigned: show assignee + unassign. No reassign from modal.
     if (assignee && status !== 'unassigned') {
         return `<div style="margin-top:10px">
-            <label class="form-label" style="font-size:12px">${'Assigned to'}</label>
+            <label class="form-label" style="font-size:12px">Assigned to</label>
             <div style="display:flex;gap:8px;align-items:center">
                 <div class="form-input" style="flex:1;min-height:36px;display:flex;align-items:center;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 10px;overflow:hidden">
                     <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700">${escHtml(assignee)}</span>
                 </div>
-                <button class="btn btn-danger btn-sm" style="white-space:nowrap" onclick="event.stopPropagation();unassignTicket('${key}')">${'Unassign'}</button>
+                <button class="btn btn-danger btn-sm" style="white-space:nowrap" onclick="event.stopPropagation();unassignTicket('${key}')">Unassign</button>
             </div>
         </div>`;
     }
@@ -6402,10 +6393,10 @@ function renderModalAssignmentBlock(ticket, key) {
     const safeKey = String(key).replace(/[^a-zA-Z0-9_-]/g, '_');
     const selectId = `modalAssign_${safeKey}`;
     return `<div style="margin-top:10px">
-        <label class="form-label" style="font-size:12px">${'Assign'}</label>
+        <label class="form-label" style="font-size:12px">Assign</label>
         <div style="display:flex;gap:8px;align-items:center">
             <select class="form-select form-select--modal-compact" id="${selectId}" style="flex:1">${getAssignmentOptionsHtml()}</select>
-            <button class="btn btn-primary btn-sm" style="white-space:nowrap" onclick="event.stopPropagation();quickAssignTicket('${key}','${selectId}')">${'Assign'}</button>
+            <button class="btn btn-primary btn-sm" style="white-space:nowrap" onclick="event.stopPropagation();quickAssignTicket('${key}','${selectId}')">Assign</button>
         </div>
     </div>`;
 }
@@ -6721,8 +6712,36 @@ let activeClockIn = null; // { ticketKey, ticketId, storeName, startTime }
 let clockTimerInterval = null;
 let clockOutPhotos = [];
 let clockOutStatus = 'inprogress';
+let techAssignedJobs = [];
+let techAssignedListenerRef = null;
+let techAssignedListenerCallback = null;
+
+function detachTechJobsListener() {
+    if (techAssignedListenerRef && techAssignedListenerCallback) {
+        techAssignedListenerRef.off('value', techAssignedListenerCallback);
+    }
+    techAssignedListenerRef = null;
+    techAssignedListenerCallback = null;
+    techAssignedJobs = [];
+}
+
+function subscribeTechJobs() {
+    const myEmail = String(currentUser?.email || '').trim().toLowerCase();
+    if (!myEmail) return;
+
+    detachTechJobsListener();
+    techAssignedListenerRef = db.ref('tickets').orderByChild('assignedTo').equalTo(myEmail);
+    techAssignedListenerCallback = snap => {
+        const assignedJobs = [];
+        snap.forEach(child => { assignedJobs.push({ _key: child.key, ...child.val() }); });
+        techAssignedJobs = assignedJobs;
+        _renderTechJobsFromAssigned(assignedJobs, myEmail);
+    };
+    techAssignedListenerRef.on('value', techAssignedListenerCallback);
+}
 
 function initTechDashboard() {
+    subscribeTechJobs();
     // Check for active clock-in from Firebase
     db.ref('timeEntries').orderByChild('techEmail').equalTo(currentUser.email).once('value', snap => {
         const entries = snap.val() || {};
@@ -6742,7 +6761,8 @@ function initTechDashboard() {
                 break;
             }
         }
-        loadTechJobs();
+        // Jobs render via realtime listener in subscribeTechJobs().
+        if (!techAssignedJobs.length) loadTechJobs();
     });
 }
 
@@ -6752,13 +6772,9 @@ function loadTechJobs() {
         listEl.innerHTML = '<div class="loading-inline"><span class="spinner spinner-dark"></span> Loading your jobs...</div>';
     }
     const myEmail = String(currentUser.email || '').trim().toLowerCase();
-    // Fast path: query only this tech's assigned tickets instead of ALL tickets
-    if (!_tCache) {
-        db.ref('tickets').orderByChild('assignedTo').equalTo(myEmail).once('value', function(snap) {
-            const assignedJobs = [];
-            snap.forEach(function(child) { assignedJobs.push(Object.assign({ _key: child.key }, child.val())); });
-            _renderTechJobsFromAssigned(assignedJobs, myEmail);
-        });
+    // Always prioritize assigned jobs already kept live by subscribeTechJobs().
+    if (techAssignedJobs.length || window.techBrowseUnassigned !== true) {
+        _renderTechJobsFromAssigned(techAssignedJobs, myEmail);
         return;
     }
     // If cache is warm, use it (includes unassigned browse jobs)
@@ -6826,15 +6842,15 @@ function renderTechDetailPane(key) {
     if (!pane) return;
     const ticket = getTicketByKey(key || (activeClockIn && activeClockIn.ticketKey));
     if (!ticket) {
-        pane.innerHTML = `<div class="tech-detail-empty">${t('Select a job to view full details.')}</div>`;
+        pane.innerHTML = `<div class="tech-detail-empty">Select a job to view full details.</div>`;
         return;
     }
         const catIcons = { plumbing:'🚿', equipment:'⚙️', it:'💻', structural:'🧱', safety:'🛡️', other:'📎' };
     const notes = [
-        t('On site — troubleshooting now'),
-        t('Part ordered — ETA pending'),
-        t('Temporary fix in place'),
-        t('Need manager follow-up')
+        'On site — troubleshooting now',
+        'Part ordered — ETA pending',
+        'Temporary fix in place',
+        'Need manager follow-up'
     ];
     pane.innerHTML = `
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;flex-wrap:wrap;margin-bottom:10px">
@@ -6849,11 +6865,11 @@ function renderTechDetailPane(key) {
         <div class="tjc-fast-actions" style="margin-bottom:10px">
             ${notes.map(n => `<button class="quick-chip" onclick="prefillTechNote('${escHtml(n)}')">${escHtml(n)}</button>`).join('')}
         </div>
-        <textarea class="form-textarea" id="techQuickNote" placeholder="${t('Quick update note')}" style="min-height:78px;font-size:13px"></textarea>
+        <textarea class="form-textarea" id="techQuickNote" placeholder="Quick update note" style="min-height:78px;font-size:13px"></textarea>
         <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-            <button class="btn btn-sm" style="background:var(--primary);color:#fff;border:none" onclick="saveTechQuickUpdate('${ticket._key}', 'inprogress')">${t('Save Update')}</button>
-            <button class="btn-view-ticket" onclick="openTicketDetail('${ticket._key}', true)">${t('Open Full Details')}</button>
-            ${(!activeClockIn || activeClockIn.ticketKey !== ticket._key) && isActiveStatus(ticket.status) ? '<button class="btn btn-sm" style="background:#059669;color:#fff;border:none" onclick="techQuickResolve(\'' + ticket._key + '\')">' + t('✅ Mark Resolved') + '</button>' : ''}
+            <button class="btn btn-sm" style="background:var(--primary);color:#fff;border:none" onclick="saveTechQuickUpdate('${ticket._key}', 'inprogress')">Save Update</button>
+            <button class="btn-view-ticket" onclick="openTicketDetail('${ticket._key}', true)">Open Full Details</button>
+            ${(!activeClockIn || activeClockIn.ticketKey !== ticket._key) && isActiveStatus(ticket.status) ? '<button class="btn btn-sm" style="background:#059669;color:#fff;border:none" onclick="techQuickResolve(\'' + ticket._key + '\')">' + '✅ Mark Resolved' + '</button>' : ''}
         </div>`;
 }
 
@@ -6877,7 +6893,7 @@ async function saveTechQuickUpdate(key, fallbackStatus) {
 async function techQuickResolve(key) {
     const ticket = getTicketByKey(key);
     if (!ticket) return;
-    if (!confirm(t('Mark this job as resolved? You can add notes and photos from the full detail view.'))) return;
+    if (!confirm('Mark this job as resolved? You can add notes and photos from the full detail view.')) return;
     try {
         const now = Date.now();
         const note = document.getElementById('techQuickNote')?.value?.trim() || '';
@@ -6894,7 +6910,7 @@ async function techQuickResolve(key) {
         };
         await db.ref('tickets/' + key + '/activity').push(activity);
         invalidateTCache();
-        toast(t('Job marked as resolved!'), 'success');
+        toast('Job marked as resolved!', 'success');
         loadTechJobs();
     } catch(err) {
         toast('Error: ' + err.message, 'error');
@@ -6910,19 +6926,19 @@ function renderTechDashboard() {
     document.getElementById('techStats').innerHTML = `
         <div class="tech-stat-card" onclick="filterTechJobs('active',null)">
             <div class="tsc-num" style="color:#d97706">${active.length}</div>
-            <div class="tsc-label">${t('Active Jobs')}</div>
+            <div class="tsc-label">Active Jobs</div>
         </div>
         <div class="tech-stat-card">
             <div class="tsc-num" style="color:#dc2626">${urgent.length}</div>
-            <div class="tsc-label">${t('Urgent')}</div>
+            <div class="tsc-label">Urgent</div>
         </div>
         <div class="tech-stat-card">
             <div class="tsc-num" style="color:#ea580c">${waiting.length}</div>
-            <div class="tsc-label">${t('Waiting')}</div>
+            <div class="tsc-label">Waiting</div>
         </div>
         <div class="tech-stat-card" onclick="filterTechJobs('completed',null)">
             <div class="tsc-num" style="color:#059669">${completed.length}</div>
-            <div class="tsc-label">${t('Completed')}</div>
+            <div class="tsc-label">Completed</div>
         </div>`;
 
     let displayJobs = techFilter === 'completed'
@@ -6943,7 +6959,7 @@ function renderTechDashboard() {
 
     const listEl = document.getElementById('techJobList');
     if (displayJobs.length === 0) {
-        const msg = techFilter === 'active' ? t('No jobs assigned to you') : t('No completed jobs yet');
+        const msg = techFilter === 'active' ? 'No jobs assigned to you' : 'No completed jobs yet';
         listEl.innerHTML = `<div class="empty-state" style="padding:40px;text-align:center;color:var(--text-muted)">${msg}</div>`;
         return;
     }
@@ -6963,12 +6979,12 @@ function renderTechDashboard() {
         let actionBtn = '';
         if (isActiveJob) {
             const modeStatus = activeClockIn.modeStatus || 'inprogress';
-            const btnLabel = modeStatus === 'inprogress' ? t('📦 Mark Waiting') : t('▶ Resume Work');
+            const btnLabel = modeStatus === 'inprogress' ? '📦 Mark Waiting' : '▶ Resume Work';
             actionBtn = `<button class="btn-tech-primary" onclick="event.stopPropagation();techAdvanceExecutionMode()">${btnLabel}</button>`;
         } else if (!isClocked && isActiveStatus(ticket.status)) {
-            actionBtn = `<button class="btn-clock-in" onclick="event.stopPropagation();clockIn('${ticket._key}','${escHtml(ticket.id)}','${escHtml(shortStore)}', '${ticket.priority || ''}')">${t('▶ Clock In')}</button>`;
+            actionBtn = `<button class="btn-clock-in" onclick="event.stopPropagation();clockIn('${ticket._key}','${escHtml(ticket.id)}','${escHtml(shortStore)}', '${ticket.priority || ''}')">▶ Clock In</button>`;
         } else if (isClocked && !isActiveJob) {
-            actionBtn = `<button class="btn-clock-in" disabled title="${t('Finish current job first')}">${t('▶ Clock In')}</button>`;
+            actionBtn = `<button class="btn-clock-in" disabled title="Finish current job first">▶ Clock In</button>`;
         }
 
         return `<div class="tech-job-card ${isActiveJob ? 'active-job' : ''}" onclick="if(!this.classList.contains('active-job'))techOpenTicket('${ticket._key}')">
@@ -6982,22 +6998,22 @@ function renderTechDashboard() {
                 <div class="tjc-meta">
                     <span class="ticket-status-badge status-${getStatusColorClass(ticket.status)}" style="font-size:11px;padding:2px 8px">${getStatusLabel(ticket.status)}</span>
                     <span style="color:var(--text-muted)">${time}</span>
-                    <span style="color:#059669;font-weight:600">${t('Assigned to you')}</span>
+                    <span style="color:#059669;font-weight:600">Assigned to you</span>
                     ${zoneBadge}
                 </div>
                 <div class="tjc-fast-actions">
-                    <button class="quick-chip" onclick="event.stopPropagation();saveTechQuickChip('${ticket._key}','On site — troubleshooting now')">${t('On site')}</button>
-                    <button class="quick-chip" onclick="event.stopPropagation();saveTechQuickChip('${ticket._key}','Waiting on parts')">${t('Waiting parts')}</button>
-                    <button class="quick-chip" onclick="event.stopPropagation();saveTechQuickChip('${ticket._key}','Need callback from store')">${t('Need callback')}</button>
+                    <button class="quick-chip" onclick="event.stopPropagation();saveTechQuickChip('${ticket._key}','On site — troubleshooting now')">On site</button>
+                    <button class="quick-chip" onclick="event.stopPropagation();saveTechQuickChip('${ticket._key}','Waiting on parts')">Waiting parts</button>
+                    <button class="quick-chip" onclick="event.stopPropagation();saveTechQuickChip('${ticket._key}','Need callback from store')">Need callback</button>
                 </div>
                 ${isActiveJob ? `<div class="tjc-note-row" onclick="event.stopPropagation()">
-                    <textarea class="tjc-note-input" id="mobileQuickNote_${ticket._key}" placeholder="${t('Add a note…')}" rows="2"></textarea>
-                    <button class="tjc-note-save" onclick="event.stopPropagation();saveMobileQuickNote('${ticket._key}')">${t('Save Note')}</button>
+                    <textarea class="tjc-note-input" id="mobileQuickNote_${ticket._key}" placeholder="Add a note…" rows="2"></textarea>
+                    <button class="tjc-note-save" onclick="event.stopPropagation();saveMobileQuickNote('${ticket._key}')">Save Note</button>
                 </div>` : ''}
             </div>
             <div class="tjc-actions">
                 ${actionBtn}
-                ${isActiveJob ? `<button class="btn-view-ticket" onclick="event.stopPropagation();showClockOutPrompt()">${t('Clock Out')}</button>` : ''}
+                ${isActiveJob ? `<button class="btn-view-ticket" onclick="event.stopPropagation();showClockOutPrompt()">Clock Out</button>` : ''}
             </div>
         </div>`;
     }).join('');
@@ -7567,14 +7583,22 @@ function subscribeAdminSummary() {
 
     adminSummaryListenerRef = db.ref('tickets');
     let _summaryDebounce = null;
+    let hasRenderedInitialSummary = false;
     adminSummaryListenerCallback = snap => {
         const tickets = [];
         snap.forEach(child => { tickets.push({ _key: child.key, ...child.val() }); });
         // Also update the ticket cache since we already have the data
         _tCache = tickets;
         _tCacheTs = Date.now();
+
+        if (!hasRenderedInitialSummary) {
+            hasRenderedInitialSummary = true;
+            renderAdminSummaryFromTickets(tickets);
+            return;
+        }
+
         clearTimeout(_summaryDebounce);
-        _summaryDebounce = setTimeout(() => renderAdminSummaryFromTickets(tickets), 800);
+        _summaryDebounce = setTimeout(() => renderAdminSummaryFromTickets(tickets), 150);
     };
 
     adminSummaryListenerRef.on('value', adminSummaryListenerCallback);
@@ -7947,13 +7971,20 @@ function filterAllTickets() {
             if (!groups[key]) groups[key] = [];
             groups[key].push(t);
         });
+        const prOrder = { emergency: 0, urgent: 1, routine: 2 };
         const sortedGroupKeys = Object.keys(groups).sort((a, b) => {
             if (a === '__unassigned__') return 1;
             if (b === '__unassigned__') return -1;
+            const countDiff = groups[b].length - groups[a].length;
+            if (countDiff !== 0) return countDiff;
             return a.localeCompare(b);
         });
         listEl.innerHTML = sortedGroupKeys.map(groupKey => {
-            const groupTickets = groups[groupKey];
+            const groupTickets = groups[groupKey].slice().sort((a, b) => {
+                const prDiff = (prOrder[a.priority] ?? 3) - (prOrder[b.priority] ?? 3);
+                if (prDiff !== 0) return prDiff;
+                return (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0);
+            });
             const displayName = groupKey === '__unassigned__' ? 'Unassigned' : groupKey.split('@')[0];
             const header = `<div style="padding:8px 12px 4px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);background:var(--bg);border-bottom:1px solid var(--border);margin-bottom:4px">👤 ${escHtml(displayName)} — ${groupTickets.length} ticket${groupTickets.length !== 1 ? 's' : ''}</div>`;
             const cards = groupTickets.map(t => renderAllTicketCard(t)).join('');
@@ -8394,7 +8425,7 @@ function showVendorContactConfirm({ missingPhone, missingEmail }) {
         const overlay = document.createElement('div');
         overlay.className = 'confirm-overlay';
 
-        const title = t('📇 Vendor contact info recommended', '📇 Información de contacto recomendada');
+        const title = '📇 Vendor contact info recommended';
         let msgParts = [];
         if (missingPhone) msgParts.push('Phone number is missing.');
         if (missingEmail) msgParts.push('Email is missing.');
