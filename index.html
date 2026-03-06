@@ -4688,7 +4688,7 @@ function initCoachLanding() {
                 const prBadge = {routine:'<span class="priority-word p-routine">Routine</span>',urgent:'<span class="priority-word p-urgent">Urgent</span>',emergency:'<span class="priority-word p-emergency">Emergency</span>'}[t.priority] || '';
                 const displayName = getAssigneeDisplayName(t);
                 const photoCount = Array.isArray(t.photos) ? t.photos.length : 0;
-                html += `<div class="slv-ticket" onclick="openTicketFromAllByKey('${esc(t._key || t.id)}')">
+                html += `<div class="slv-ticket" data-ticket-key="${esc(t._key || t.id)}" data-store-code="${esc(t.storeCode || '')}" onclick="openTicketFromAllByKey('${esc(t._key || t.id)}')">
                     ${prBadge}
                     <span class="slv-desc">${escHtml((t.description || '').substring(0, 80))}</span>
                     <span class="slv-right-group">
@@ -4787,7 +4787,7 @@ function showCoachOpenTickets() {
                 const photoCount = Array.isArray(t.photos) ? t.photos.length : 0;
                 const statusCls = getStatusColorClass(t.status);
                 const statusLabel = getStatusLabel(t.status);
-                html += `<div class="slv-ticket" onclick="openTicketFromAllByKey('${esc(t._key || t.id)}')">
+                html += `<div class="slv-ticket" data-ticket-key="${esc(t._key || t.id)}" data-store-code="${esc(t.storeCode || '')}" onclick="openTicketFromAllByKey('${esc(t._key || t.id)}')">
                     ${prBadge}
                     <span class="slv-desc">${escHtml((t.description || '').substring(0, 80))}</span>
                     <span class="slv-right-group">
@@ -5489,21 +5489,7 @@ function renderStoreListView() {
             html += `<div class="slv-store">
                 <div class="slv-store-name">${shortName} <span style="font-size:12px;font-weight:400;color:var(--text-muted)">(${storeTickets.length} open)</span></div>`;
             storeTickets.forEach(t => {
-                const prBadge = {routine:'<span class="priority-word p-routine">Routine</span>',urgent:'<span class="priority-word p-urgent">Urgent</span>',emergency:'<span class="priority-word p-emergency">Emergency</span>'}[t.priority] || '';
-                const displayName = getAssigneeDisplayName(t);
-                const photoCount = Array.isArray(t.photos) ? t.photos.length : 0;
-                const statusCls = getStatusColorClass(t.status);
-                const statusLabel = getStatusLabel(t.status);
-                html += `<div class="slv-ticket" onclick="listViewOpenTicket('${t._key}')">
-                    ${prBadge}
-                    <span class="slv-desc">${escHtml(t.description || '').substring(0,80)}</span>
-                    <span class="slv-right-group">
-                        ${displayName ? `<span class="slv-assignee-name">${escHtml(displayName)}</span>` : ''}
-                        <span class="ticket-status-badge status-${statusCls}" style="font-size:11px;padding:2px 8px">${statusLabel}</span>
-                        ${photoCount ? `<span class="slv-photo-count">📷 ${photoCount}</span>` : ''}
-                    </span>
-                    ${renderInlineAssignControls(t, 'slv')}
-                </div>`;
+                html += renderStoreListTicketCard(t);
             });
             html += '</div>';
         });
@@ -8068,7 +8054,7 @@ function renderAllTicketCard(t) {
     const shortDesc = (t.description || '').substring(0, 80) + ((t.description || '').length > 80 ? '...' : '');
     const prColor = t.priority === 'emergency' ? '#dc2626' : t.priority === 'urgent' ? '#d97706' : '#059669';
     const staleInProgress = normalizeTicketStatus(t.status) === 'inprogress' && ((Date.now() - (t.updatedAt || t.createdAt || 0)) >= 24 * 60 * 60 * 1000);
-    return `<div class="ticket-card" onclick="openTicketFromAllByKey('${esc(t._key || t.id)}')">
+    return `<div class="ticket-card" data-ticket-key="${esc(t._key || t.id)}" data-assigned-to="${esc(String(t.assignedTo || '').trim())}" onclick="openTicketFromAllByKey('${esc(t._key || t.id)}')">
         <div class="ticket-card-top">
             <span class="ticket-store-name">${esc(t.storeName || t.storeCode)}</span>
             ${getAssigneeBadgeHtml(t)}
@@ -8086,6 +8072,24 @@ function renderAllTicketCard(t) {
             ${staleInProgress ? '<span class="priority-badge p-urgent">⏱️ In Progress 24h+</span>' : ''}
         </div>
         ${renderInlineAssignControls(t, 'all')}
+    </div>`;
+}
+
+function renderStoreListTicketCard(t) {
+    const prBadge = {routine:'<span class="priority-word p-routine">Routine</span>',urgent:'<span class="priority-word p-urgent">Urgent</span>',emergency:'<span class="priority-word p-emergency">Emergency</span>'}[t.priority] || '';
+    const displayName = getAssigneeDisplayName(t);
+    const photoCount = Array.isArray(t.photos) ? t.photos.length : 0;
+    const statusCls = getStatusColorClass(t.status);
+    const statusLabel = getStatusLabel(t.status);
+    return `<div class="slv-ticket" data-ticket-key="${esc(t._key || t.id)}" data-store-code="${esc(t.storeCode || '')}" onclick="listViewOpenTicket('${t._key}')">
+        ${prBadge}
+        <span class="slv-desc">${escHtml(t.description || '').substring(0,80)}</span>
+        <span class="slv-right-group">
+            ${displayName ? `<span class="slv-assignee-name">${escHtml(displayName)}</span>` : ''}
+            <span class="ticket-status-badge status-${statusCls}" style="font-size:11px;padding:2px 8px">${statusLabel}</span>
+            ${photoCount ? `<span class="slv-photo-count">📷 ${photoCount}</span>` : ''}
+        </span>
+        ${renderInlineAssignControls(t, 'slv')}
     </div>`;
 }
 
@@ -8761,39 +8765,41 @@ function renderTickets() {
         return;
     }
 
-    listEl.innerHTML = tickets.map(t => {
-        const catIcons = { plumbing:'🚿', equipment:'⚙️', it:'💻', structural:'🧱', safety:'🛡️', other:'📎' };
-        const timeAgo = getTimeAgo(t.createdAt);
-        const brandLogo = t.brand && BRAND_LOGOS[t.brand] ? `<img src="${BRAND_LOGOS[t.brand]}" alt="" style="width:16px;height:16px;object-fit:contain;border-radius:3px;opacity:.7;vertical-align:middle">` : '';
-        const staleInProgress = normalizeTicketStatus(t.status) === 'inprogress' && ((Date.now() - (t.updatedAt || t.createdAt || 0)) >= 24 * 60 * 60 * 1000);
-        const showDelete = canDeleteTickets();
-        const deleteBtn = showDelete ? `<button class="ticket-card-delete-btn" title="Delete ticket" onclick="event.stopPropagation();deleteTicket('${t._key}','${escHtml(t.id || t._key)}')">🗑</button>` : '';
+    listEl.innerHTML = tickets.map(t => renderExistingIssueTicketCard(t)).join('');
+}
 
-        return `
-        <div class="ticket-card" onclick="openTicketDetail('${t._key}')">
-            <div class="ticket-card-inner">
-                <div class="ticket-status-bar" style="background: var(--status-${getStatusColorClass(t.status)})"></div>
-                <div class="ticket-body">
-                    <div class="ticket-top-row">
-                        <span class="ticket-id">${t.id || t._key}</span>
-                        <div style="display:flex;align-items:center;gap:6px">
-                            <span class="ticket-status-badge status-${getStatusColorClass(t.status)}">${getStatusLabel(t.status)}</span>
-                            ${deleteBtn}
-                        </div>
-                    </div>
-                    <div class="ticket-title">${catIcons[t.category] || '📎'} ${escHtml(t.description.substring(0, 80))}${t.description.length > 80 ? '...' : ''}</div>
-                    <div class="ticket-meta">
-                        <span><span class="priority-dot ${t.priority}"></span> ${capitalize(t.priority)}</span>
-                        <span>${catLabel(t.category)}${t.location ? ' · ' + capitalize(t.location) : ''}</span>
-                        <span>${brandLogo} ${timeAgo}</span>
-                        ${t.photos && t.photos.length ? '<span>📷 ' + t.photos.length + '</span>' : ''}
-                        ${t.contactPhone ? '<span>📞</span>' : ''}
-                        ${staleInProgress ? '<span class="priority-badge p-urgent">⏱️ In Progress 24h+</span>' : ''}
+function renderExistingIssueTicketCard(t) {
+    const catIcons = { plumbing:'🚿', equipment:'⚙️', it:'💻', structural:'🧱', safety:'🛡️', other:'📎' };
+    const timeAgo = getTimeAgo(t.createdAt);
+    const brandLogo = t.brand && BRAND_LOGOS[t.brand] ? `<img src="${BRAND_LOGOS[t.brand]}" alt="" style="width:16px;height:16px;object-fit:contain;border-radius:3px;opacity:.7;vertical-align:middle">` : '';
+    const staleInProgress = normalizeTicketStatus(t.status) === 'inprogress' && ((Date.now() - (t.updatedAt || t.createdAt || 0)) >= 24 * 60 * 60 * 1000);
+    const showDelete = canDeleteTickets();
+    const deleteBtn = showDelete ? `<button class="ticket-card-delete-btn" title="Delete ticket" onclick="event.stopPropagation();deleteTicket('${t._key}','${escHtml(t.id || t._key)}')">🗑</button>` : '';
+
+    return `
+    <div class="ticket-card" data-ticket-key="${esc(t._key || t.id)}" onclick="openTicketDetail('${t._key}')">
+        <div class="ticket-card-inner">
+            <div class="ticket-status-bar" style="background: var(--status-${getStatusColorClass(t.status)})"></div>
+            <div class="ticket-body">
+                <div class="ticket-top-row">
+                    <span class="ticket-id">${t.id || t._key}</span>
+                    <div style="display:flex;align-items:center;gap:6px">
+                        <span class="ticket-status-badge status-${getStatusColorClass(t.status)}">${getStatusLabel(t.status)}</span>
+                        ${deleteBtn}
                     </div>
                 </div>
+                <div class="ticket-title">${catIcons[t.category] || '📎'} ${escHtml((t.description || '').substring(0, 80))}${(t.description || '').length > 80 ? '...' : ''}</div>
+                <div class="ticket-meta">
+                    <span><span class="priority-dot ${t.priority}"></span> ${capitalize(t.priority)}</span>
+                    <span>${catLabel(t.category)}${t.location ? ' · ' + capitalize(t.location) : ''}</span>
+                    <span>${brandLogo} ${timeAgo}</span>
+                    ${t.photos && t.photos.length ? '<span>📷 ' + t.photos.length + '</span>' : ''}
+                    ${t.contactPhone ? '<span>📞</span>' : ''}
+                    ${staleInProgress ? '<span class="priority-badge p-urgent">⏱️ In Progress 24h+</span>' : ''}
+                </div>
             </div>
-        </div>`;
-    }).join('');
+        </div>
+    </div>`;
 }
 
 // ============================================================
@@ -9281,7 +9287,132 @@ async function updateTicketStatus(key, status, el) {
 // ------------------------------------------------------------
 // Keep ticket collections and active views in sync after updates
 // ------------------------------------------------------------
+function findTicketByKey(arr, ticketKey) {
+    return (arr || []).find(x => x && (x._key === ticketKey || x.id === ticketKey));
+}
+
+function ticketMatchesAllTicketsCurrentFilter(ticket) {
+    if (!ticket) return false;
+    if (!scopeTicketsToUser([ticket]).length) return false;
+
+    const status = document.getElementById('atFilterStatus')?.value || 'unassigned';
+    const type = document.getElementById('atFilterType')?.value || '';
+    const storeCode = document.getElementById('atFilterStore')?.value || '';
+
+    if (status !== 'all' && getStatusMeta(status) && normalizeTicketStatus(ticket.status) !== status) return false;
+    if (type && type !== 'all') {
+        const typeCodes = stores.filter(s => s.type === type).map(s => s.code);
+        if (!typeCodes.includes(ticket.storeCode)) return false;
+    }
+    if (storeCode && ticket.storeCode !== storeCode) return false;
+
+    if (allTicketsDrilldown) {
+        const d = allTicketsDrilldown;
+        if (d.storeCode && ticket.storeCode !== d.storeCode) return false;
+        if (d.ticketId && ticket.id !== d.ticketId) return false;
+        if (d.assignedTo && ticket.assignedTo !== d.assignedTo) return false;
+        if (d.scope === 'unassigned-critical') {
+            const active = isActiveTicketStatus(ticket.status);
+            const critical = ticket.priority === 'urgent' || ticket.priority === 'emergency';
+            const unassigned = !String(ticket.assignedTo || '').trim();
+            if (!(active && critical && unassigned)) return false;
+        }
+    }
+
+    return true;
+}
+
+function ticketMatchesStoreViewFilter(ticket) {
+    if (!ticket || !isActiveStatus(ticket.status)) return false;
+    if (!lastFilteredStores.length) return false;
+    return lastFilteredStores.some(s => s.code === ticket.storeCode);
+}
+
+function ticketMatchesCoachStoresFilter(ticket) {
+    if (!ticket || !isActiveStatus(ticket.status)) return false;
+    const accessible = new Set(getAccessibleStores().map(s => s.code));
+    return accessible.has(ticket.storeCode);
+}
+
+function updateTicketCardInAllTickets(ticketKey, patch) {
+    const ticket = findTicketByKey(allTicketsData, ticketKey);
+    if (!ticket) return;
+    const listEl = document.getElementById('allTicketsList');
+    if (!listEl) return;
+
+    const cards = Array.from(listEl.querySelectorAll('.ticket-card')).filter(el => (el.dataset.ticketKey || '') === String(ticketKey));
+    cards.forEach(card => { card.outerHTML = renderAllTicketCard(ticket); });
+}
+
+function renderCoachStoreTicketCard(ticket) {
+    const prBadge = {routine:'<span class="priority-word p-routine">Routine</span>',urgent:'<span class="priority-word p-urgent">Urgent</span>',emergency:'<span class="priority-word p-emergency">Emergency</span>'}[ticket.priority] || '';
+    const displayName = getAssigneeDisplayName(ticket);
+    const photoCount = Array.isArray(ticket.photos) ? ticket.photos.length : 0;
+    return `<div class="slv-ticket" data-ticket-key="${esc(ticket._key || ticket.id)}" data-store-code="${esc(ticket.storeCode || '')}" onclick="openTicketFromAllByKey('${esc(ticket._key || ticket.id)}')">
+        ${prBadge}
+        <span class="slv-desc">${escHtml((ticket.description || '').substring(0, 80))}</span>
+        <span class="slv-right-group">
+            ${displayName ? `<span class="slv-assignee-name">${escHtml(displayName)}</span>` : ''}
+            <span class="ticket-status-badge status-${getStatusColorClass(ticket.status)}" style="font-size:11px;padding:2px 8px">${getStatusLabel(ticket.status)}</span>
+            ${photoCount ? `<span class="slv-photo-count">📷 ${photoCount}</span>` : ''}
+        </span>
+    </div>`;
+}
+
+function updateTicketCardInStoreView(ticketKey, patch) {
+    const ticket = findTicketByKey(allTicketsData, ticketKey) || findTicketByKey(_tCache || [], ticketKey);
+    if (!ticket) return;
+
+    const containers = [
+        { id: 'storeListView', render: renderStoreListTicketCard },
+        { id: 'coachLandingTicketsList', render: renderCoachStoreTicketCard },
+        { id: 'coachOpenTicketsList', render: renderCoachStoreTicketCard }
+    ];
+
+    containers.forEach(cfg => {
+        const root = document.getElementById(cfg.id);
+        if (!root) return;
+        const cards = Array.from(root.querySelectorAll('.slv-ticket')).filter(el => (el.dataset.ticketKey || '') === String(ticketKey));
+        cards.forEach(card => { card.outerHTML = cfg.render(ticket); });
+    });
+}
+
+function updateTicketCardInExistingIssues(ticketKey) {
+    const ticket = findTicketByKey(currentTickets, ticketKey);
+    if (!ticket) return;
+    const listEl = document.getElementById('ticketsList');
+    if (!listEl) return;
+    const cards = Array.from(listEl.querySelectorAll('.ticket-card')).filter(el => (el.dataset.ticketKey || '') === String(ticketKey));
+    cards.forEach(card => { card.outerHTML = renderExistingIssueTicketCard(ticket); });
+}
+
+function recalcStoreCounts(storeCode) {
+    if (!storeCode) return;
+    const source = _tCache || [];
+    const counts = { open: 0, unassigned: 0, total: 0, score: 0, hasEmergency: false };
+    source.forEach(t => {
+        if (t.storeCode !== storeCode) return;
+        counts.total++;
+        if (isActiveStatus(t.status)) {
+            counts.open++;
+            if (normalizeTicketStatus(t.status) === 'unassigned') counts.unassigned++;
+            if (t.priority === 'emergency') { counts.score += 3; counts.hasEmergency = true; }
+            else if (t.priority === 'urgent') counts.score += 2;
+            else counts.score += 1;
+        }
+    });
+    allTicketCounts[storeCode] = counts;
+}
+
+function updateStoreCountersForTicketDelta(oldTicket, newTicket) {
+    const codes = [oldTicket?.storeCode, newTicket?.storeCode].filter(Boolean);
+    [...new Set(codes)].forEach(recalcStoreCounts);
+}
+
 function syncAfterTicketMutation(ticketKey, patch) {
+    const oldTicket = findTicketByKey(allTicketsData, ticketKey) || findTicketByKey(_tCache || [], ticketKey) || null;
+    const newTicketPreview = oldTicket ? { ...oldTicket, ...patch } : null;
+
     // Keep the shared cache in sync so subsequent reads stay fresh
     if (_tCache) {
         var ci = _tCache.findIndex(function(x) { return x._key === ticketKey || x.id === ticketKey; });
@@ -9296,26 +9427,44 @@ function syncAfterTicketMutation(ticketKey, patch) {
     applyPatch(allTicketsData);
     applyPatch(notifyTickets);
 
-    if (!document.getElementById('allTicketsScreen').classList.contains('hidden')) {
-        filterAllTickets();
-    }
-    if (!document.getElementById('existingIssuesScreen').classList.contains('hidden')) {
-        renderTickets();
-    }
-    if (!document.getElementById('storeSelection').classList.contains('hidden') && currentMapView === 'list') {
-        renderStoreListView();
-    }
-    // Refresh coach landing inline ticket list if visible
-    if (!document.getElementById('coachLanding').classList.contains('hidden')) {
-        const ticketListEl = document.getElementById('coachLandingTicketsList');
-        if (ticketListEl) {
-            const idx = allTicketsData.findIndex(x => x._key === ticketKey || x.id === ticketKey);
-            if (idx >= 0) {
-                // Re-render by re-calling initCoachLanding silently (only the ticket list part)
-                initCoachLanding();
-            }
+    const allTicketsVisible = !document.getElementById('allTicketsScreen').classList.contains('hidden');
+    if (allTicketsVisible) {
+        const oldMatches = ticketMatchesAllTicketsCurrentFilter(oldTicket);
+        const newMatches = ticketMatchesAllTicketsCurrentFilter(newTicketPreview);
+        if (oldMatches !== newMatches) {
+            filterAllTickets();
+        } else {
+            updateTicketCardInAllTickets(ticketKey, patch);
         }
     }
+
+    const existingIssuesVisible = !document.getElementById('existingIssuesScreen').classList.contains('hidden');
+    if (existingIssuesVisible) {
+        updateTicketCardInExistingIssues(ticketKey);
+    }
+
+    const storeListVisible = !document.getElementById('storeSelection').classList.contains('hidden') && currentMapView === 'list';
+    const coachLandingVisible = !document.getElementById('coachLanding').classList.contains('hidden');
+    const coachOpenVisible = !document.getElementById('coachOpenTicketsScreen').classList.contains('hidden');
+    if (storeListVisible) {
+        const oldMatches = ticketMatchesStoreViewFilter(oldTicket);
+        const newMatches = ticketMatchesStoreViewFilter(newTicketPreview);
+        if (oldMatches !== newMatches) renderStoreListView();
+        else updateTicketCardInStoreView(ticketKey, patch);
+    }
+
+    if (coachLandingVisible || coachOpenVisible) {
+        const oldMatches = ticketMatchesCoachStoresFilter(oldTicket);
+        const newMatches = ticketMatchesCoachStoresFilter(newTicketPreview);
+        if (oldMatches !== newMatches) {
+            if (coachLandingVisible) initCoachLanding();
+            if (coachOpenVisible) showCoachOpenTickets();
+        } else {
+            updateTicketCardInStoreView(ticketKey, patch);
+        }
+    }
+
+    updateStoreCountersForTicketDelta(oldTicket, newTicketPreview);
 
     updateNotifyBadge();
     const panel = document.getElementById('notifyPanel');
