@@ -6956,27 +6956,7 @@ async function saveTechQuickUpdate(key, fallbackStatus) {
 async function techQuickResolve(key) {
     const ticket = getTicketByKey(key);
     if (!ticket) return;
-    if (!confirm('Mark this job as resolved? A photo is required for quick resolve.')) return;
-
-    const photoPicker = document.createElement('input');
-    photoPicker.type = 'file';
-    photoPicker.accept = 'image/*';
-    photoPicker.capture = 'environment';
-
-    const pickedFile = await new Promise(resolve => {
-        photoPicker.onchange = () => resolve(photoPicker.files && photoPicker.files[0] ? photoPicker.files[0] : null);
-        photoPicker.click();
-    });
-
-    if (!pickedFile) {
-        toast('A photo is required to quick-resolve.', 'error');
-        return;
-    }
-    if (pickedFile.size > 5 * 1024 * 1024) {
-        toast('Photo too large (max 5MB).', 'error');
-        return;
-    }
-
+    if (!confirm('Mark this job as resolved? You can add notes and photos from the full detail view.')) return;
     try {
         const now = Date.now();
         const note = document.getElementById('techQuickNote')?.value?.trim() || '';
