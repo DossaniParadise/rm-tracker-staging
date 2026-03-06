@@ -6415,17 +6415,19 @@ async function markAssignedContactedYes(ticketKey) {
         // Tech-assigned tickets go straight to dispatched on assignment — this path is for vendors only.
         if (t.assigneeType === 'tech') return;
 
-        const actSnap = await db.ref(`tickets/${ticketKey}/activity`).once('value');
-        const activity = actSnap.val() || [];
-        activity.push({ action:'status', by: currentUser.name, byEmail: currentUser.email, oldStatus:'assigned', newStatus:'dispatched', note:'Vendor contacted', timestamp: Date.now() });
+        const activityEntry = { action:'status', by: currentUser.name, byEmail: currentUser.email, oldStatus:'assigned', newStatus:'dispatched', note:'Vendor contacted', timestamp: Date.now() };
 
         await db.ref().update({
             [`tickets/${ticketKey}/status`]: 'dispatched',
-            [`tickets/${ticketKey}/updatedAt`]: firebase.database.ServerValue.TIMESTAMP,
-            [`tickets/${ticketKey}/activity`]: activity
+            [`tickets/${ticketKey}/updatedAt`]: firebase.database.ServerValue.TIMESTAMP
         });
+        await db.ref(`tickets/${ticketKey}/activity`).push(activityEntry);
 
-        syncAfterTicketMutation(ticketKey, { status:'dispatched', updatedAt: Date.now(), activity });
+        syncAfterTicketMutation(ticketKey, {
+            status:'dispatched',
+            updatedAt: Date.now(),
+            activity: normalizeActivityList(t.activity).concat(activityEntry)
+        });
         toast('Moved to Dispatched', 'success');
         filterAllTickets();
     } catch (err) {
@@ -6572,6 +6574,17 @@ function showAssignReminder(ticket, partyLabel) {
     });
 }
 
+function normalizeActivityList(activityRaw) {
+    if (!activityRaw) return [];
+    if (Array.isArray(activityRaw)) return activityRaw.filter(Boolean);
+    if (typeof activityRaw === 'object') {
+        return Object.values(activityRaw)
+            .filter(Boolean)
+            .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    }
+    return [];
+}
+
 
 async function unassignTicket(ticketKey) {
     if (!ticketKey) return;
@@ -6581,9 +6594,7 @@ async function unassignTicket(ticketKey) {
         const ticket = ticketSnap.val();
         if (!ticket) { toast('Ticket not found. Please refresh.', 'error'); return; }
 
-        const actSnap = await db.ref(`tickets/${ticketKey}/activity`).once('value');
-        const activity = actSnap.val() || [];
-        activity.push({
+        const activityEntry = {
             action: 'assignment_change',
             by: currentUser.name,
             byEmail: currentUser.email,
@@ -6591,22 +6602,23 @@ async function unassignTicket(ticketKey) {
             assignedTo: null,
             assigneeType: null,
             note: 'Unassigned and returned to queue'
-        });
+        };
 
         await db.ref().update({
             [`tickets/${ticketKey}/assignedTo`]: '',
             [`tickets/${ticketKey}/assigneeType`]: '',
             [`tickets/${ticketKey}/status`]: 'unassigned',
-            [`tickets/${ticketKey}/updatedAt`]: firebase.database.ServerValue.TIMESTAMP,
-            [`tickets/${ticketKey}/activity`]: activity
+            [`tickets/${ticketKey}/updatedAt`]: firebase.database.ServerValue.TIMESTAMP
         });
+        await db.ref(`tickets/${ticketKey}/activity`).push(activityEntry);
 
+        const existingActivity = normalizeActivityList(ticket.activity);
         syncAfterTicketMutation(ticketKey, {
             assignedTo: '',
             assigneeType: '',
             status: 'unassigned',
             updatedAt: Date.now(),
-            activity
+            activity: existingActivity.concat(activityEntry)
         });
 
         toast('Ticket unassigned', 'success');
@@ -6649,9 +6661,7 @@ async function quickAssignTicket(ticketKey, selectId) {
         const ticket = ticketSnap.val();
         if (!ticket) { toast('Ticket not found. Please refresh.', 'error'); return; }
 
-        const actSnap = await db.ref(`tickets/${ticketKey}/activity`).once('value');
-        const activity = actSnap.val() || [];
-        activity.push({
+        const activityEntry = {
             action: 'assignment_change',
             by: currentUser.name,
             byEmail: currentUser.email,
@@ -6659,22 +6669,23 @@ async function quickAssignTicket(ticketKey, selectId) {
             assignedTo: parsed.assignedTo,
             assigneeType: parsed.assigneeType,
             note: activityNote
-        });
+        };
 
         await db.ref().update({
             [`tickets/${ticketKey}/assignedTo`]: parsed.assignedTo,
             [`tickets/${ticketKey}/assigneeType`]: parsed.assigneeType,
             [`tickets/${ticketKey}/status`]: newStatus,
-            [`tickets/${ticketKey}/updatedAt`]: firebase.database.ServerValue.TIMESTAMP,
-            [`tickets/${ticketKey}/activity`]: activity
+            [`tickets/${ticketKey}/updatedAt`]: firebase.database.ServerValue.TIMESTAMP
         });
+        await db.ref(`tickets/${ticketKey}/activity`).push(activityEntry);
 
+        const existingActivity = normalizeActivityList(ticket.activity);
         syncAfterTicketMutation(ticketKey, {
             assignedTo: parsed.assignedTo,
             assigneeType: parsed.assigneeType,
             status: newStatus,
             updatedAt: Date.now(),
-            activity
+            activity: existingActivity.concat(activityEntry)
         });
 
         toast(isTech ? 'Dispatched to technician' : 'Ticket assigned', 'success');
@@ -6897,6 +6908,7 @@ async function techQuickResolve(key) {
     try {
         const now = Date.now();
         const note = document.getElementById('techQuickNote')?.value?.trim() || '';
+        const photoUrl = await fileToBase64(pickedFile);
         await db.ref('tickets/' + key + '/status').set('resolved');
         await db.ref('tickets/' + key + '/updatedAt').set(firebase.database.ServerValue.TIMESTAMP);
         const activity = {
@@ -6906,7 +6918,8 @@ async function techQuickResolve(key) {
             timestamp: now,
             oldStatus: ticket.status,
             newStatus: 'resolved',
-            note: note ? 'Marked resolved — "' + note + '"' : 'Marked resolved by technician'
+            note: note ? 'Marked resolved — "' + note + '"' : 'Marked resolved by technician',
+            photos: [photoUrl]
         };
         await db.ref('tickets/' + key + '/activity').push(activity);
         invalidateTCache();
@@ -7423,9 +7436,9 @@ function showClockOutPrompt() {
 async function confirmClockOut() {
     if (!activeClockIn) return;
 
-    // Photos strongly recommended but not mandatory
-    if (clockOutPhotos.length === 0) {
-        if (!confirm('No photos attached. Photos help document completed work. Continue without photos?')) return;
+    // For resolving via clock-out: photos are strongly recommended but not mandatory.
+    if (clockOutStatus === 'resolved' && clockOutPhotos.length === 0) {
+        if (!confirm('No photos attached. Photos are strongly recommended when resolving a job. Continue without photos?')) return;
     }
 
     const btn = document.getElementById('clockOutBtn');
@@ -8837,11 +8850,12 @@ function openTicketDetail(key, forceModal = true) {
     }
 
     // Activity log
-    if (t.activity && t.activity.length) {
+    const activityList = normalizeActivityList(t.activity);
+    if (activityList.length) {
         html += `
         <div class="activity-log">
             <h4>Activity</h4>
-            ${t.activity.slice().reverse().map(a => `
+            ${activityList.slice().reverse().map(a => `
                 <div class="activity-item">
                     <div class="activity-dot" style="background: var(--status-${a.action === 'created' ? 'unassigned' : (normalizeTicketStatus(a.newStatus) || 'unassigned')})"></div>
                     <div>
@@ -9324,10 +9338,11 @@ async function saveStatusUpdate(key) {
         }
 
         const actSnap = await db.ref(`tickets/${key}/activity`).once('value');
-        const currentActivity = actSnap.val() || [];
+        const currentActivity = normalizeActivityList(actSnap.val());
+        const newActivityEntries = [];
 
         if (newStatus !== currentStatus) {
-            currentActivity.push({
+            newActivityEntries.push({
                 action: 'status_change',
                 by: currentUser.name,
                 byEmail: currentUser.email,
@@ -9339,7 +9354,7 @@ async function saveStatusUpdate(key) {
                 ...(statusPhotoUrls.length ? { photos: statusPhotoUrls } : {})
             });
         } else if (note || statusPhotoUrls.length) {
-            currentActivity.push({
+            newActivityEntries.push({
                 action: 'note',
                 by: currentUser.name,
                 byEmail: currentUser.email,
@@ -9350,7 +9365,7 @@ async function saveStatusUpdate(key) {
         }
 
         if (priorityChanged) {
-            currentActivity.push({
+            newActivityEntries.push({
                 action: 'priority_change',
                 by: currentUser.name,
                 byEmail: currentUser.email,
@@ -9360,10 +9375,11 @@ async function saveStatusUpdate(key) {
                 note: priorityReason
             });
         }
-
-
-        updates[`tickets/${key}/activity`] = currentActivity;
         await db.ref().update(updates);
+        for (const entry of newActivityEntries) {
+            await db.ref(`tickets/${key}/activity`).push(entry);
+        }
+        const mergedActivity = currentActivity.concat(newActivityEntries);
 
         const mergedPatch = {
             ...(newStatus !== currentStatus ? { status: newStatus } : {}),
@@ -9377,7 +9393,7 @@ async function saveStatusUpdate(key) {
                 return { assignedTo: parsed.assignedTo, assigneeType: parsed.assigneeType, status: (newStatus === 'unassigned' ? 'assigned' : newStatus) };
             })() : {}),
             updatedAt: Date.now(),
-            activity: currentActivity
+            activity: mergedActivity
         };
         syncAfterTicketMutation(key, mergedPatch);
 
