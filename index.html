@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Dossani Paradise R&M V2</title>
     <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://firebaseio.com" crossorigin>
@@ -3158,6 +3161,26 @@ body.exp-tech-tablet .ticket-filters { gap: 6px; }
         z-index: 15;
     }
     .tech-mobile-footer .btn { min-height: 46px; }
+
+    /* Prevent iOS/Android auto-zoom and cramped controls in modals/menus */
+    .form-input,
+    .form-select,
+    .form-textarea,
+    .btn,
+    .filter-chip,
+    .view-as-select,
+    .status-option,
+    .quick-chip {
+        font-size: 16px !important;
+    }
+
+    .modal-content,
+    .modal-card,
+    .confirm-box {
+        width: min(96vw, 640px);
+        max-height: 92vh;
+        overflow: auto;
+    }
 }
 
 .modal-card .modal-actions { display: flex; gap: 8px; margin-top: 16px; }
@@ -4896,10 +4919,16 @@ function showAppScreen() {
     }
 
     // Fire non-blocking data loads in parallel (don't await, they resolve independently)
-    Promise.all([loadVendors(), loadTechUsers()]).catch(e => console.warn('Parallel load warn:', e));
+    // Keep technician/view-as-tech startup fast by skipping vendor/admin datasets.
+    const effectiveRole = getEffectiveUserRole(currentUser);
+    if (effectiveRole === 'Technician') {
+        loadTechUsers().catch(e => console.warn('Tech user load warn:', e));
+    } else {
+        Promise.all([loadVendors(), loadTechUsers()]).catch(e => console.warn('Parallel load warn:', e));
+    }
 
     subscribeAdminSummary();
-    startGlobalPolling();
+    if (effectiveRole !== 'Technician') startGlobalPolling();
     routeToProfileLanding();
     updateLayoutVisibility(currentScreenId);
 }
@@ -5128,10 +5157,26 @@ filterStores = function() {
     }
     
     const mapEl = document.getElementById('mapOverview');
+    const overviewMapEl = document.getElementById('overviewMap');
+    const overviewListEl = document.getElementById('storeListView');
+    const legend = document.querySelector('.map-legend');
+    document.querySelectorAll('#mapViewToggle button').forEach(b => b.classList.remove('active'));
+    const activeBtn = document.querySelector(`#mapViewToggle button[onclick="setMapView('${currentMapView}')"]`);
+    if (activeBtn) activeBtn.classList.add('active');
+    if (currentMapView === 'list') {
+        if (overviewMapEl) overviewMapEl.style.display = 'none';
+        if (overviewListEl) overviewListEl.style.display = '';
+        if (legend) { legend.style.visibility = 'hidden'; legend.style.pointerEvents = 'none'; }
+    } else {
+        if (overviewMapEl) overviewMapEl.style.display = '';
+        if (overviewListEl) overviewListEl.style.display = 'none';
+        if (legend) { legend.style.visibility = ''; legend.style.pointerEvents = ''; }
+    }
     
     if (type && isMultiStoreUser()) {
         mapEl.classList.remove('hidden');
-        loadMapOverview(type);
+        const isMobileListMode = currentMapView === 'list' && window.innerWidth < 1100;
+        loadMapOverview(type, { skipMapRender: isMobileListMode });
     } else {
         mapEl.classList.add('hidden');
     }
@@ -5145,7 +5190,8 @@ filterStores = function() {
     }
 };
 
-function loadMapOverview(type) {
+function loadMapOverview(type, options = {}) {
+    const skipMapRender = !!options.skipMapRender;
     let filtered = type === 'all' ? [...stores] : stores.filter(s => s.type === type);
     
     // Permission filter — centralized scoping
@@ -5154,29 +5200,31 @@ function loadMapOverview(type) {
     const typeLabels = { all: 'All Locations', fastfood: 'Fast Food Stores', cstore: 'C-Stores', carwash: 'Car Washes' };
     document.getElementById('mapTitle').textContent = typeLabels[type] || 'Stores';
     
-    // Init or clear map
-    if (!overviewMap) {
-        if (typeof L === 'undefined') { loadLeaflet().then(() => loadMapOverview()); return; }
-        overviewMap = L.map('overviewMap', { zoomControl: true, attributionControl: false }).setView([33.0, -96.5], 7);
-        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-        currentTileLayer = L.tileLayer(isDark ? DARK_TILES : LIGHT_TILES, {
-            maxZoom: 18
-        }).addTo(overviewMap);
-        setTimeout(() => overviewMap.invalidateSize(), 100);
-    } else {
-        overviewMap.invalidateSize();
+    if (!skipMapRender) {
+        // Init or clear map
+        if (!overviewMap) {
+            if (typeof L === 'undefined') { loadLeaflet().then(() => loadMapOverview(type)); return; }
+            overviewMap = L.map('overviewMap', { zoomControl: true, attributionControl: false }).setView([33.0, -96.5], 7);
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            currentTileLayer = L.tileLayer(isDark ? DARK_TILES : LIGHT_TILES, {
+                maxZoom: 18
+            }).addTo(overviewMap);
+            setTimeout(() => overviewMap.invalidateSize(), 100);
+        } else {
+            overviewMap.invalidateSize();
+        }
+
+        // Clear old markers
+        mapMarkers.forEach(m => overviewMap.removeLayer(m));
+        mapMarkers = [];
     }
-    
-    // Clear old markers
-    mapMarkers.forEach(m => overviewMap.removeLayer(m));
-    mapMarkers = [];
     
     // Fetch open ticket counts for these stores
     const codes = filtered.map(s => s.code);
     fetchTicketCounts(codes, () => {
         // Add markers
         const bounds = [];
-        filtered.forEach(s => {
+        if (!skipMapRender) filtered.forEach(s => {
             if (!s.lat || !s.lng) return;
             const counts = allTicketCounts[s.code] || { open: 0, total: 0, score: 0, hasEmergency: false };
             // Color: green = no issues, yellow = low severity, red = emergency or high score
@@ -5212,7 +5260,7 @@ function loadMapOverview(type) {
             bounds.push([s.lat, s.lng]);
         });
         
-        if (bounds.length) {
+        if (!skipMapRender && bounds.length) {
             overviewMap.fitBounds(bounds, { padding: [30, 30], maxZoom: 12 });
         }
         
@@ -5385,7 +5433,7 @@ function desktopSelectStore(storeId) {
 }
 
 // Map / List view toggle
-let currentMapView = localStorage.getItem('mapViewPref') || 'map';
+let currentMapView = localStorage.getItem('mapViewPref') || ((window.innerWidth < 900) ? 'list' : 'map');
 let lastFilteredStores = [];
 
 function setMapView(view) {
@@ -5407,6 +5455,10 @@ function setMapView(view) {
         mapEl.style.display = '';
         listEl.style.display = 'none';
         if (legend) { legend.style.visibility = ''; legend.style.pointerEvents = ''; }
+        if (!overviewMap) {
+            const currentType = document.getElementById('storeType')?.value || 'all';
+            loadMapOverview(currentType);
+        }
         if (overviewMap) setTimeout(() => overviewMap.invalidateSize(), 100);
     }
 }
@@ -8141,8 +8193,9 @@ function doViewAs() {
         routeToProfileLanding();
 
         // Re-subscribe admin summary so counts reflect the impersonated user's store scope
+        const role = getEffectiveUserRole(currentUser);
         subscribeAdminSummary();
-        startGlobalPolling();
+        if (role !== 'Technician') startGlobalPolling();
         updateLayoutVisibility(currentScreenId);
 
         initNotificationCenter();
@@ -8168,8 +8221,9 @@ function exitViewAs() {
     routeToProfileLanding();
 
     // Re-subscribe admin summary so counts return to Overwatch's full view
+    const role = getEffectiveUserRole(currentUser);
     subscribeAdminSummary();
-    startGlobalPolling();
+    if (role !== 'Technician') startGlobalPolling();
     updateLayoutVisibility(currentScreenId);
 
     initNotificationCenter();
@@ -9462,6 +9516,7 @@ function normalizeRole(r) {
     if (lower === 'director' || lower === 'vp' || lower === 'dev') return 'Director';
     if (lower === 'areacoach' || lower === 'area coach') return 'Area Coach';
     if (lower === 'technician') return 'Technician';
+    if (lower === 'itsupport' || lower === 'it support' || lower === 'it-support') return 'ITSupport';
     return 'Manager';
 }
 
@@ -9479,19 +9534,19 @@ function getRoleTitle(user = currentUser) {
 function isItsupportUser(user = currentUser) {
     if (!user) return false;
     const role = normalizeRole(user.role);
-    return role === 'Overwatch' || role === 'Viewer';
+    return role === 'Overwatch' || role === 'Viewer' || role === 'ITSupport';
 }
 
 function canDeleteTickets(user = currentUser) {
     if (isViewerKiosk(user)) return false;
     const role = getEffectiveUserRole(user);
-    return role === 'Overwatch' || role === 'Admin' || role === 'Director';
+    return role === 'Overwatch' || role === 'Admin' || role === 'Director' || role === 'ITSupport';
 }
 
 function canCorrectTicketMeta(user = currentUser) {
     if (isViewerKiosk(user)) return false;
     const role = getEffectiveUserRole(user);
-    return role === 'Overwatch' || role === 'Admin' || role === 'Director' || role === 'Area Coach';
+    return role === 'Overwatch' || role === 'Admin' || role === 'Director' || role === 'Area Coach' || role === 'ITSupport';
 }
 
 function getEffectiveUserRole(user = currentUser) {
@@ -9501,19 +9556,19 @@ function getEffectiveUserRole(user = currentUser) {
 function canAccessAdminPanel(user = currentUser) {
     if (isViewerKiosk(user)) return false;
     const role = getEffectiveUserRole(user);
-    return role === 'Overwatch' || role === 'Admin';
+    return role === 'Overwatch' || role === 'Admin' || role === 'ITSupport';
 }
 
 function canAssignTickets(user = currentUser) {
     if (isViewerKiosk(user)) return false;
     const role = getEffectiveUserRole(user);
-    return role === 'Overwatch' || role === 'Admin' || role === 'Director';
+    return role === 'Overwatch' || role === 'Admin' || role === 'Director' || role === 'ITSupport';
 }
 
 function canManageVendors(user = currentUser) {
     if (isViewerKiosk(user)) return false;
     const role = getEffectiveUserRole(user);
-    return role === 'Overwatch' || role === 'Admin' || role === 'Director';
+    return role === 'Overwatch' || role === 'Admin' || role === 'Director' || role === 'ITSupport';
 }
 
 function canEditUrgency(user = currentUser) {
@@ -9549,7 +9604,7 @@ function getNextStatusesByRole(status, user = currentUser, ticket = null) {
     const role = normalizeRole(user?.role);
 
     if (!role || role === 'Manager') return [from];
-    if (role === 'Overwatch' || role === 'Admin' || role === 'Director') return [from, ...baseTransitions];
+    if (role === 'Overwatch' || role === 'Admin' || role === 'Director' || role === 'ITSupport') return [from, ...baseTransitions];
     if (role === 'Area Coach') {
         // Can only change status if ticket is already assigned (not unassigned)
         if (from === 'unassigned') return [from];
@@ -9774,7 +9829,7 @@ document.addEventListener('keydown', (e) => {
 
 <!-- Version Footer -->
 <div id="versionFooter" style="position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.03);border-top:1px solid rgba(0,0,0,0.06);padding:2px 8px;font-size:10px;color:#94a3b8;display:flex;justify-content:center;gap:16px;z-index:1;font-family:'JetBrains Mono',monospace;letter-spacing:0.3px">
-    <span>R&M Tracker v3.15</span>
+    <span>R&M Tracker v3.16</span>
 </div>
 
 </body>
