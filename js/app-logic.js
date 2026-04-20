@@ -1,75 +1,46 @@
-
 /* --- READABLE MAGIC LINK SYSTEM --- */
 function normalizeUser(userData) {
     if (!userData) return null;
-    const name = userData.name || userData.displayName || 'Unnamed User';
+    const name = userData.name || userData.displayName || "Unnamed User";
     return {
-        uid: userData.uid || '',
-        email: (userData.email || '').toLowerCase(),
+        uid: userData.uid || "",
+        email: (userData.email || "").toLowerCase(),
         name: name,
-        role: (userData.role || 'technician'),
+        role: (userData.role || "technician"),
         stores: userData.stores || [],
-        title: userData.title || userData.role || '',
-        token: userData.token || ''
+        title: userData.title || userData.role || "",
+        token: userData.token || ""
     };
 }
 
 async function initMagicAccess() {
     const params = new URLSearchParams(window.location.search);
-    const slug = params.get('u');
-
+    const slug = params.get("u");
     if (!slug) {
-        document.body.innerHTML = `
-            <div style="height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; font-family:sans-serif; background:#f8f9fa;">
-                <div style="background:white; padding:40px; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.1); text-align:center;">
-                    <h2 style="color:#1e293b;">Access Required</h2>
-                    <p style="color:#64748b;">Please open the app using your personal link.</p>
-                </div>
-            </div>`;
+        document.body.innerHTML = '<div style="height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; font-family:sans-serif; background:#f8f9fa;"><div style="background:white; padding:40px; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.1); text-align:center;"><h2 style="color:#1e293b;">Access Required</h2><p style="color:#64748b;">Please use your personalized link.</p></div></div>';
         return;
     }
-
     try {
-        const snap = await db.ref('users').orderByChild('token').equalTo(slug.toLowerCase()).once('value');
+        const snap = await db.ref("users").orderByChild("token").equalTo(slug.toLowerCase()).once("value");
         const data = snap.val();
-
-        if (!data) {
-            alert("This link is no longer valid.");
-            return;
-        }
-
+        if (!data) { alert("Invalid Link"); return; }
         const uid = Object.keys(data)[0];
         currentUser = normalizeUser({ uid, ...data[uid] });
-        
-        if (currentUser.role === 'Admin' || currentUser.role === 'Overwatch') {
-            if (!sessionStorage.getItem('adminToken')) {
-                sessionStorage.setItem('adminToken', slug);
-            }
+        if (currentUser.role === "Admin" || currentUser.role === "Overwatch") {
+            if (!sessionStorage.getItem("adminToken")) sessionStorage.setItem("adminToken", slug);
         }
-
-        const storedAdmin = sessionStorage.getItem('adminToken');
+        const storedAdmin = sessionStorage.getItem("adminToken");
         if (storedAdmin && slug !== storedAdmin) {
-            const btn = document.createElement('div');
-            btn.id = 'admin-return-btn';
-            btn.innerHTML = '⬅️ Back to Admin';
+            const btn = document.createElement("div");
+            btn.innerHTML = "⬅️ Back to Admin";
             btn.style = "position:fixed; bottom:20px; right:20px; background:#2563eb; color:white; padding:12px 20px; border-radius:50px; cursor:pointer; z-index:10000; font-weight:bold; box-shadow:0 4px 15px rgba(0,0,0,0.3); font-family:sans-serif;";
-            btn.onclick = () => { window.location.href = window.location.origin + window.location.pathname + '?u=' + storedAdmin; };
+            btn.onclick = () => { window.location.href = window.location.origin + window.location.pathname + "?u=" + storedAdmin; };
             document.body.appendChild(btn);
         }
-
-        console.log("✨ Authenticated as:", currentUser.name);
-        showAppScreen(); 
-    } catch (e) {
-        console.error("Magic Link Error:", e);
-    }
+        showAppScreen();
+    } catch (e) { console.error(e); }
 }
-
-window.onload = () => {
-    if (typeof firebase !== 'undefined') {
-        firebase.auth().signInAnonymously().then(initMagicAccess);
-    }
-};
-
+window.onload = () => { if(typeof firebase !== "undefined") firebase.auth().signInAnonymously().then(initMagicAccess); };
 
 // ============================================================
 // STORES DATA - Dossani Paradise Management
@@ -5559,6 +5530,6 @@ function doViewAs() {
     if (token) {
         window.location.href = window.location.origin + window.location.pathname + '?u=' + token;
     } else {
-        alert("No token for this user.");
+        alert("No token found.");
     }
 }
