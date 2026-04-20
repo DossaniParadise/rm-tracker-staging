@@ -41,17 +41,16 @@ async function initMagicAccess() {
         const uid = Object.keys(data)[0];
         currentUser = normalizeUser({ uid, ...data[uid] });
         
-        // ADMIN SAFETY NET: Remember the original admin token
         if (currentUser.role === 'Admin' || currentUser.role === 'Overwatch') {
             if (!sessionStorage.getItem('adminToken')) {
                 sessionStorage.setItem('adminToken', slug);
             }
         }
 
-        // SHOW "RETURN TO ADMIN" BUTTON IF IMPERSONATING
         const storedAdmin = sessionStorage.getItem('adminToken');
         if (storedAdmin && slug !== storedAdmin) {
             const btn = document.createElement('div');
+            btn.id = 'admin-return-btn';
             btn.innerHTML = '⬅️ Back to Admin';
             btn.style = "position:fixed; bottom:20px; right:20px; background:#2563eb; color:white; padding:12px 20px; border-radius:50px; cursor:pointer; z-index:10000; font-weight:bold; box-shadow:0 4px 15px rgba(0,0,0,0.3); font-family:sans-serif;";
             btn.onclick = () => { window.location.href = window.location.origin + window.location.pathname + '?u=' + storedAdmin; };
@@ -66,7 +65,9 @@ async function initMagicAccess() {
 }
 
 window.onload = () => {
-    firebase.auth().signInAnonymously().then(initMagicAccess);
+    if (typeof firebase !== 'undefined') {
+        firebase.auth().signInAnonymously().then(initMagicAccess);
+    }
 };
 
 
@@ -3884,7 +3885,7 @@ function showViewAsModal() {
                 <select class="form-select form-select--modal view-as-select" id="viewAsSelect">
                     <option value="">Choose a user...</option>
                     ${entries.sort((a,b) => (a[1].name||'').localeCompare(b[1].name||'')).map(([uid, u]) =>
-                        `<option value="${uid}" data-token="${u.token || ''}">${esc(u.name || 'Unknown')} — ${esc(resolveViewAsOptionTitle(u))} (${esc(u.email || uid)})</option>`
+                        `<option value="${uid}" data-token="${(users[uid].token || '')}">${esc(u.name || 'Unknown')} — ${esc(resolveViewAsOptionTitle(u))} (${esc(u.email || uid)})</option>`
                     ).join('')}
                 </select>
             </div>
@@ -3897,20 +3898,11 @@ function showViewAsModal() {
     });
 }
 
-
 function doViewAs() {
-    const select = document.getElementById('viewAsSelect');
-    if (!select) return;
-    const selectedOption = select.options[select.selectedIndex];
-    const token = selectedOption.getAttribute('data-token'); 
+    const uid = document.getElementById('viewAsSelect').value;
+    if (!uid) return;
 
-    if (token) {
-        const newUrl = window.location.origin + window.location.pathname + '?u=' + token;
-        window.location.href = newUrl;
-    } else {
-        alert("This user does not have a Magic Link token assigned.");
-    }
-}`).once('value', snap => {
+    db.ref(`users/${uid}`).once('value', snap => {
         const data = snap.val();
         if (!data) { showToast('User not found', 'error'); return; }
 
@@ -5427,7 +5419,14 @@ function getCategoryEmoji(cat) {
     return map[cat] || '📎';
 }
 
-/* fileToBase64 REMOVED */
+function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
 
 function showToast(msg, type = 'success') {
     const t = document.getElementById('toast');
@@ -5550,3 +5549,16 @@ document.addEventListener('keydown', (e) => {
         closeModal();
     }
 });
+
+
+function doViewAs() {
+    const select = document.getElementById('viewAsSelect');
+    if (!select) return;
+    const opt = select.options[select.selectedIndex];
+    const token = opt.getAttribute('data-token');
+    if (token) {
+        window.location.href = window.location.origin + window.location.pathname + '?u=' + token;
+    } else {
+        alert("No token for this user.");
+    }
+}
