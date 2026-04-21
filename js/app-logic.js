@@ -1,44 +1,38 @@
 /* --- READABLE MAGIC LINK SYSTEM --- */
-function normalizeUser(userData) {
-    if (!userData) return null;
-    const name = userData.name || userData.displayName || "Unnamed User";
+function normalizeUser(uD) {
+    if (!uD) return null;
     return {
-        uid: userData.uid || "",
-        email: (userData.email || "").toLowerCase(),
-        name: name,
-        role: (userData.role || "technician"),
-        stores: userData.stores || [],
-        title: userData.title || userData.role || "",
-        token: userData.token || ""
+        uid: uD.uid || "",
+        email: (uD.email || "").toLowerCase() || "no-email@dpm.com",
+        name: uD.name || "User",
+        role: uD.role || "technician",
+        stores: uD.stores || [],
+        token: uD.token || ""
     };
 }
-
 async function initMagicAccess() {
-    const params = new URLSearchParams(window.location.search);
-    const slug = params.get("u");
-    if (!slug) {
-        document.body.innerHTML = '<div style="height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; font-family:sans-serif; background:#f8f9fa;"><div style="background:white; padding:40px; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.1); text-align:center;"><h2 style="color:#1e293b;">Access Required</h2><p style="color:#64748b;">Please use your personalized link.</p></div></div>';
-        return;
-    }
+    const p = new URLSearchParams(window.location.search);
+    const s = p.get("u");
+    if (!s) { document.body.innerHTML = "Access Required"; return; }
     try {
-        const snap = await db.ref("users").orderByChild("token").equalTo(slug.toLowerCase()).once("value");
-        const data = snap.val();
-        if (!data) { alert("Invalid Link"); return; }
-        const uid = Object.keys(data)[0];
-        currentUser = normalizeUser({ uid, ...data[uid] });
+        const sn = await db.ref("users").orderByChild("token").equalTo(s.toLowerCase()).once("value");
+        const d = sn.val();
+        if (!d) { alert("Invalid Link"); return; }
+        const uid = Object.keys(d)[0];
+        currentUser = normalizeUser({ uid, ...d[uid] });
         if (currentUser.role === "Admin" || currentUser.role === "Overwatch") {
-            if (!sessionStorage.getItem("adminToken")) sessionStorage.setItem("adminToken", slug);
+            if (!sessionStorage.getItem("adminToken")) sessionStorage.setItem("adminToken", s);
         }
-        const storedAdmin = sessionStorage.getItem("adminToken");
-        if (storedAdmin && slug !== storedAdmin) {
-            const btn = document.createElement("div");
-            btn.innerHTML = "⬅️ Back to Admin";
-            btn.style = "position:fixed; bottom:20px; right:20px; background:#2563eb; color:white; padding:12px 20px; border-radius:50px; cursor:pointer; z-index:10000; font-weight:bold; box-shadow:0 4px 15px rgba(0,0,0,0.3); font-family:sans-serif;";
-            btn.onclick = () => { window.location.href = window.location.origin + window.location.pathname + "?u=" + storedAdmin; };
-            document.body.appendChild(btn);
+        const aT = sessionStorage.getItem("adminToken");
+        if (aT && s !== aT) {
+            const b = document.createElement("div");
+            b.innerHTML = "⬅️ Back to Admin";
+            b.style = "position:fixed; bottom:20px; right:20px; background:#2563eb; color:white; padding:12px 20px; border-radius:50px; cursor:pointer; z-index:10000; font-weight:bold; box-shadow:0 4px 15px rgba(0,0,0,0.3);";
+            b.onclick = () => { window.location.href = window.location.origin + window.location.pathname + "?u=" + aT; };
+            document.body.appendChild(b);
         }
         showAppScreen();
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error("Magic Link Error:", e); }
 }
 window.onload = () => { if(typeof firebase !== "undefined") firebase.auth().signInAnonymously().then(initMagicAccess); };
 
@@ -3856,7 +3850,7 @@ function showViewAsModal() {
                 <select class="form-select form-select--modal view-as-select" id="viewAsSelect">
                     <option value="">Choose a user...</option>
                     ${entries.sort((a,b) => (a[1].name||'').localeCompare(b[1].name||'')).map(([uid, u]) =>
-                        `<option value="${uid}" data-token="${(users[uid].token || '')}">${esc(u.name || 'Unknown')} — ${esc(resolveViewAsOptionTitle(u))} (${esc(u.email || uid)})</option>`
+                        `<option value="${uid}">${esc(u.name || 'Unknown')} — ${esc(resolveViewAsOptionTitle(u))} (${esc(u.email || uid)})</option>`
                     ).join('')}
                 </select>
             </div>
@@ -5530,6 +5524,6 @@ function doViewAs() {
     if (token) {
         window.location.href = window.location.origin + window.location.pathname + '?u=' + token;
     } else {
-        alert("No token found.");
+        alert("No token assigned to this user.");
     }
 }
